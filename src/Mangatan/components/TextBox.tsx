@@ -58,12 +58,12 @@ export const TextBox: React.FC<{
         const pxH = block.tightBoundingBox.height * containerRect.height;
 
         if (!isEditing) {
-            const displayTxt = cleanPunctuation(block.text).replace(/\u200B/g, '\n');
+            const displayTxt = cleanPunctuation(block.text, settings.addSpaceOnMerge).replace(/\u200B/g, '\n');
             setFontSize(calculateFontSize(displayTxt, pxW + adj, pxH + adj, isVertical, settings));
         }
     }, [block, containerRect, settings, isEditing, isVertical]);
 
-    let displayContent = isEditing ? block.text : cleanPunctuation(block.text);
+    let displayContent = isEditing ? block.text : cleanPunctuation(block.text, settings.addSpaceOnMerge);
     displayContent = displayContent.replace(/\u200B/g, '\n');
 
     // --- MOBILE DESELECTION & SAVE LOGIC ---
@@ -185,7 +185,7 @@ export const TextBox: React.FC<{
                 } catch (err) {}
             }
 
-            let content = cleanPunctuation(block.text);
+            let content = cleanPunctuation(block.text, settings.addSpaceOnMerge);
             content = content.replace(/\u200B/g, '\n');
 
             const encoder = new TextEncoder();

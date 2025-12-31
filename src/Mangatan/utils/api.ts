@@ -238,7 +238,7 @@ export const logDebug = (msg: string, isDebug: boolean) => {
     if (isDebug) console.log(`[OCR PC Hybrid] ${new Date().toLocaleTimeString()} ${msg}`);
 };
 
-export const cleanPunctuation = (text: string): string => {
+export const cleanPunctuation = (text: string, preserveSpaces: boolean = false): string => {
     if (!text) return text;
     let t = text
         .replace(/[ ]*!!+/g, '‼')
@@ -257,6 +257,8 @@ export const cleanPunctuation = (text: string): string => {
         .replace(/^[!?:]+$/g, '')
         .replace(/([⁉⁈‼⁇])[!?:]+/g, '$1')
         .replace(/[!?:]+([⁉⁈‼⁇])/g, '$1');
+
+    if (preserveSpaces) return t;
     return t.replace(/\u0020/g, '');
 };
 
