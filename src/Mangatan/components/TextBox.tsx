@@ -219,18 +219,20 @@ export const TextBox: React.FC<{
             style={{
                 left: `calc(${block.tightBoundingBox.x * 100}% - ${adj / 2}px)`,
                 top: `calc(${block.tightBoundingBox.y * 100}% - ${adj / 2}px)`,
-                width: `calc(${block.tightBoundingBox.width * 100}% + ${adj}px)`,
-                height: `calc(${block.tightBoundingBox.height * 100}% + ${adj}px)`,
+                // MODIFIED: Use min-width/min-height with fit-content to allow box to expand for text
+                minWidth: `calc(${block.tightBoundingBox.width * 100}% + ${adj}px)`,
+                minHeight: `calc(${block.tightBoundingBox.height * 100}% + ${adj}px)`,
+                width: 'fit-content',
+                height: 'fit-content',
                 fontSize: `${fontSize}px`,
                 color: settings.focusFontColor === 'difference' ? 'white' : 'var(--ocr-text-color)',
                 mixBlendMode: settings.focusFontColor === 'difference' ? 'difference' : 'normal',
-                // This is critical for properly displaying the backend's newlines
-                whiteSpace: 'pre', 
-                overflow: isEditing ? 'auto' : 'hidden', 
+                whiteSpace: 'pre',
+                // MODIFIED: Visible overflow so text never gets clipped even if it's slightly larger than the OCR box
+                overflow: isEditing ? 'auto' : 'visible', 
                 touchAction: 'pan-y', 
                 backgroundColor: isActive ? activeBgColor : bgColor,
                 outline: isActive ? '2px solid var(--ocr-accent, #4890ff)' : 'none',
-                // Increased line-height for vertical text to prevent columns from touching
                 lineHeight: isVertical ? '1.5' : '1.1',
             }}
         >
