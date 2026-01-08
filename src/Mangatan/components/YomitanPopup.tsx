@@ -1,7 +1,6 @@
 import React, { useRef, useLayoutEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useOCR } from '@/Mangatan/context/OCRContext';
-import { DictionaryResult } from '@/Mangatan/types';
 
 const StructuredContent: React.FC<{ contentString: string }> = ({ contentString }) => {
     const parsedData = useMemo(() => {

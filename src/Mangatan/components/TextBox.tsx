@@ -2,7 +2,7 @@ import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { OcrBlock } from '@/Mangatan/types';
 import { useOCR } from '@/Mangatan/context/OCRContext';
 import { cleanPunctuation, lookupYomitan } from '@/Mangatan/utils/api';
-import { createCard, updateLastCard, imageUrlToBase64Webp } from '@/Mangatan/utils/anki';
+import { updateLastCard  } from '@/Mangatan/utils/anki';
 import { CropperModal } from '@/Mangatan/components/CropperModal';
 import { createPortal } from 'react-dom';
 
@@ -51,7 +51,6 @@ export const TextBox: React.FC<{
         showProgress,
         showAlert,
         closeDialog,
-        serverSettings
     } = useOCR();
     const [isEditing, setIsEditing] = useState(false);
     const [isActive, setIsActive] = useState(false); 
@@ -188,7 +187,6 @@ export const TextBox: React.FC<{
                     try {
                         showProgress('Updating Anki card...');
 
-                        const { updateLastCard } = await import('@/Mangatan/utils/anki');
 
                         await updateLastCard(
                             settings.ankiConnectUrl || 'http://127.0.0.1:8765',
