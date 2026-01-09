@@ -33,11 +33,12 @@ export const TextBox: React.FC<{
     block: OcrBlock;
     index: number;
     imgSrc: string;
+    spreadData?: { leftSrc: string; rightSrc: string };
     containerRect: DOMRect;
     onUpdate: (idx: number, txt: string) => void;
     onMerge: (src: number, target: number) => void;
     onDelete: (idx: number) => void;
-}> = ({ block, index, imgSrc, containerRect, onUpdate, onMerge, onDelete }) => {
+}> = ({ block, index, imgSrc, spreadData, containerRect, onUpdate, onMerge, onDelete }) => {
     const { 
         settings, 
         mergeAnchor, 
@@ -443,6 +444,7 @@ export const TextBox: React.FC<{
             {showCropper && createPortal(
                 <CropperModal
                     imageSrc={imgSrc}
+                    spreadData={spreadData}
                     onComplete={handleCropperComplete}
                     onCancel={() => setShowCropper(false)}
                     quality={settings.ankiImageQuality || 0.92}
