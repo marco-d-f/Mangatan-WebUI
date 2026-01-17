@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { useOCR } from '@/Mangatan/context/OCRContext';
 import MangatanLogo from '@/Mangatan/assets/mangatan_logo.png';
+import { TypographyMaxLines } from '@/base/components/texts/TypographyMaxLines';
 
 const READER_DESKTOP_SELECTOR = '.MuiDrawer-paper .MuiDivider-root + .MuiStack-root';
 const READER_MOBILE_SELECTOR = 'button[aria-label="Quick settings"]';
@@ -134,14 +135,14 @@ export const SettingsInjector = () => {
     return (
         <>
             {readerMount && readerView === 'desktop' && createPortal(
-                <div style={{ marginTop: '8px', width: '100%', display: 'flex' }}>
+                <div style={{ width: '100%', display: 'flex' }}>
                     <Button
                         onClick={openSettings}
                         variant="contained"
                         size="large"
                         sx={{ justifyContent: 'start', textTransform: 'unset', flexGrow: 1 }}
                         startIcon={
-                            <img src={MangatanLogo} alt="Logo" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+                            <img src={MangatanLogo} alt="Logo" style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover' }} />
                         }
                     >
                         Mangatan Settings
@@ -158,7 +159,7 @@ export const SettingsInjector = () => {
                     aria-label="Mangatan Settings"
                     sx={{ padding: '8px' }}
                 >
-                    <img src={MangatanLogo} alt="Mangatan" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+                    <img src={MangatanLogo} alt="Mangatan" style={{ width: '1em', height: '1em', borderRadius: '50%', objectFit: 'cover' }} />
                 </IconButton>,
                 readerMount
             )}
@@ -182,31 +183,42 @@ export const SettingsInjector = () => {
                             sx={isDense ? {
                                 justifyContent: 'center',
                                 minWidth: 'auto',
-                                mb: 0.5
+                                mb: 0
                             } : {
                             }}
                         >
                              <img src={MangatanLogo} alt="Mangatan" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
                         </ListItemIcon>
                         
-                        <ListItemText 
-                            primary={
-                                isDense ? (
-                                    <Typography variant="caption" sx={{ lineHeight: 1.2 }}>
+                            <ListItemText
+                                primary={
+                                    <TypographyMaxLines
+                                        lines={1}
+                                        variant={isDense ? 'caption' : undefined}
+                                        sx={{
+                                            '& .MuiTypography-root': {
+                                                fontWeight: 'inherit',
+                                                color: 'inherit'
+                                            }
+                                        }}
+                                    >
                                         Mangatan
-                                    </Typography>
-                                ) : (
-                                    "Mangatan"
-                                )
-                            }
-                            sx={{ 
-                                m: 0,
-                                '& .MuiTypography-root': {
-                                    fontWeight: 'inherit',
-                                    color: 'inherit'
+                                    </TypographyMaxLines>
                                 }
-                            }} 
-                        />
+                                secondary={
+                                    !isDense && (
+                                        <Typography variant="caption" color="textSecondary" sx={{
+                                            '& .MuiTypography-root': {
+                                                fontWeight: 'inherit',
+                                                color: 'inherit'
+                                            }
+                                        }}>
+                                            Mangatan Settings
+                                        </Typography>
+                                    )
+                                }
+                                sx={{ maxWidth: '100%', m: 0, display: 'flex', flexDirection: 'column' }}
+                            />
                     </ListItemButton>
                 </ListItem>,
                 libraryMount
