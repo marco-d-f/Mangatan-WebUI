@@ -480,6 +480,11 @@ const BaseReaderChapterViewer = ({
         return PagerContent;
     }
 
+    // Return preloaded chapter unwrapped so it can collapse to 0x0 size correctly.
+    if (shouldHideChapter) {
+        return PagerContent;
+    }
+
     // If Mobile Mode: Wrap in Zoom Engine
     const isVertical = isContinuousVerticalReadingMode(readingMode);
     const isHorizontalContinuous = readingMode === ReadingMode.CONTINUOUS_HORIZONTAL;
