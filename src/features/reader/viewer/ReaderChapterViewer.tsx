@@ -47,7 +47,7 @@ import { ChapterIdInfo } from '@/features/chapter/Chapter.types.ts';
 import { READER_DEFAULT_PAGES_STATE } from '@/features/reader/stores/ReaderPagesStore.ts';
 import { getReaderChaptersStore } from '@/features/reader/stores/ReaderStore.ts';
 
-import { useIsMobile } from '@/Mangatan/hooks/useIsMobile';
+import { useIsMobile } from '@/Manatan/hooks/useIsMobile';
 
 const BaseReaderChapterViewer = ({
     currentPageIndex,
@@ -469,6 +469,11 @@ const BaseReaderChapterViewer = ({
     // --- CONDITIONAL RENDERING ---
     // If NOT Zoom Enabled: Render pure content (Original Behavior)
     if (!isZoomEnabled) {
+        return PagerContent;
+    }
+
+    // Return preloaded chapter unwrapped so it can collapse to 0x0 size correctly.
+    if (shouldHideChapter) {
         return PagerContent;
     }
 
