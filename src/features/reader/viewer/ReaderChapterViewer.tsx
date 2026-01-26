@@ -47,8 +47,7 @@ import { ChapterIdInfo } from '@/features/chapter/Chapter.types.ts';
 import { READER_DEFAULT_PAGES_STATE } from '@/features/reader/stores/ReaderPagesStore.ts';
 import { getReaderChaptersStore } from '@/features/reader/stores/ReaderStore.ts';
 
-// Import Context to respect "Mobile Mode" setting
-import { useOCR } from '@/Mangatan/context/OCRContext';
+import { useIsMobile } from '@/Mangatan/hooks/useIsMobile';
 
 const BaseReaderChapterViewer = ({
     currentPageIndex,
@@ -132,17 +131,9 @@ const BaseReaderChapterViewer = ({
     const { t } = useTranslation();
     const { direction: themeDirection } = useTheme();
 
-    // --- DETECT MOBILE MODE ---
-    const isUserAgentMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    let isSettingMobile = false;
-    try {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        const { settings } = useOCR();
-        isSettingMobile = settings?.mobileMode || false;
-    } catch (e) { /* ignore */ }
 
     // If TRUE, we wrap in Zoom Engine. If FALSE, we render standard layout (Raw Stack).
-    const isMobile = isUserAgentMobile || isSettingMobile;
+    const isMobile = useIsMobile();
 
     // --- ZOOM STATE ---
     const [scale, setScale] = useState(1);
