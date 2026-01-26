@@ -15,6 +15,7 @@ export interface SiteConfig {
 
 // Added 'dark' to the allowed types
 export type ColorTheme = 'blue' | 'red' | 'green' | 'orange' | 'purple' | 'turquoise' | 'pink' | 'grey' | 'white' | 'dark';
+export type YomitanLanguage = 'japanese' | 'english' | 'chinese' | 'korean';
 
 export interface ServerSettingsData { authUsername?: string; authPassword?: string; }
 
@@ -29,6 +30,7 @@ export interface Settings {
     subtitleFontSize: number;
     subtitleFontWeight: number;
     jimakuApiKey?: string;
+    yomitanLanguage: YomitanLanguage;
     textOrientation: 'smart' | 'forceVertical' | 'forceHorizontal';
     debugMode: boolean;
     mobileMode: boolean;
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
     subtitleFontSize: 22,
     subtitleFontWeight: 600,
     jimakuApiKey: '',
+    yomitanLanguage: 'japanese',
     textOrientation: 'smart',
     debugMode: false,
     mobileMode: false,

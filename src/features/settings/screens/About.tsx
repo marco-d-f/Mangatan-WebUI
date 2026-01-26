@@ -60,6 +60,54 @@ export function About() {
     return (
         <List sx={{ pt: 0 }}>
             <List
+                subheader={
+                    <ListSubheader component="div" id="about-donations">
+                        Support Manatan
+                    </ListSubheader>
+                }
+            >
+                <ListItem>
+                    <ListItemText
+                        primary="Donations help keep Manatan free and support development, hosting, and testing."
+                        secondary="If you find Manatan useful, consider supporting the project."
+                    />
+                </ListItem>
+                <ListItemLink to="https://www.patreon.com/cw/Manatan" target="_blank" rel="noreferrer">
+                    <ListItemText primary={"Patreon"} secondary="https://www.patreon.com/cw/Manatan" />
+                </ListItemLink>
+                <ListItemLink to="https://ko-fi.com/kolbyml" target="_blank" rel="noreferrer">
+                    <ListItemText primary={"Ko-fi"} secondary="https://ko-fi.com/kolbyml" />
+                </ListItemLink>
+            </List>
+            <Divider />
+            <List
+                subheader={
+                    <ListSubheader component="div" id="about-links">
+                        {t('global.label.links')}
+                    </ListSubheader>
+                }
+            >
+                <ListItemLink to="https://github.com/KolbyML/Manatan" target="_blank" rel="noreferrer">
+                    <ListItemText
+                        primary={"Manatan"}
+                        secondary="https://github.com/KolbyML/Manatan"
+                    />
+                </ListItemLink>
+                <ListItemLink to="https://github.com/KolbyML/Manatan-WebUI" target="_blank" rel="noreferrer">
+                    <ListItemText
+                        primary={"Manatan WebUI"}
+                        secondary="https://github.com/KolbyML/Manatan-WebUI"
+                    />
+                </ListItemLink>
+                <ListItemLink to="https://discord.gg/tDAtpPN8KK" target="_blank" rel="noreferrer">
+                    <ListItemText primary={"Manatan Discord"} secondary="https://discord.gg/tDAtpPN8KK" />
+                </ListItemLink>
+                <ListItemLink to={aboutServer.github} target="_blank" rel="noreferrer">
+                    <ListItemText primary={"Suwayomi Server"} secondary={aboutServer.github} />
+                </ListItemLink>
+            </List>
+            <Divider />
+            <List
                 sx={{ padding: 0 }}
                 subheader={
                     <ListSubheader component="div" id="about-server-info">
@@ -119,33 +167,6 @@ export function About() {
                         }
                     />
                 </ListItem>
-            </List>
-            <Divider />
-            <List
-                subheader={
-                    <ListSubheader component="div" id="about-links">
-                        {t('global.label.links')}
-                    </ListSubheader>
-                }
-            >
-                <ListItemLink to="https://github.com/KolbyML/Manatan" target="_blank" rel="noreferrer">
-                    <ListItemText
-                        primary={"Manatan"}
-                        secondary="https://github.com/KolbyML/Manatan"
-                    />
-                </ListItemLink>
-                <ListItemLink to="https://github.com/KolbyML/Manatan-WebUI" target="_blank" rel="noreferrer">
-                    <ListItemText
-                        primary={"Manatan WebUI"}
-                        secondary="https://github.com/KolbyML/Manatan-WebUI"
-                    />
-                </ListItemLink>
-                <ListItemLink to="https://discord.gg/tDAtpPN8KK" target="_blank" rel="noreferrer">
-                    <ListItemText primary={"Manatan Discord"} secondary="https://discord.gg/tDAtpPN8KK" />
-                </ListItemLink>
-                <ListItemLink to={aboutServer.github} target="_blank" rel="noreferrer">
-                    <ListItemText primary={"Suwayomi Server"} secondary={aboutServer.github} />
-                </ListItemLink>
             </List>
         </List>
     );

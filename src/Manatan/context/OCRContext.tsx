@@ -11,6 +11,9 @@ interface OCRContextType {
     isSettingsOpen: boolean;
     openSettings: () => void;
     closeSettings: () => void;
+    isSetupOpen: boolean;
+    openSetup: () => void;
+    closeSetup: () => void;
 
     ocrCache: Map<string, OcrBlock[]>;
     updateOcrData: (imgSrc: string, data: OcrBlock[]) => void;
@@ -69,6 +72,17 @@ export const OCRProvider = ({ children }: { children: ReactNode }) => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const openSettings = useCallback(() => setIsSettingsOpen(true), []);
     const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+
+    const [isSetupOpen, setIsSetupOpen] = useState(() => {
+        try {
+            return !AppStorage.local.getItem('manatan_setup_complete_v1');
+        } catch (e) {
+            console.error('Failed to read setup flag', e);
+            return false;
+        }
+    });
+    const openSetup = useCallback(() => setIsSetupOpen(true), []);
+    const closeSetup = useCallback(() => setIsSetupOpen(false), []);
 
     const [ocrCache, setOcrCache] = useState<Map<string, OcrBlock[]>>(new Map());
     const [ocrStatusMap, setOcrStatusMap] = useState<Map<string, OcrStatus>>(new Map());    
@@ -164,6 +178,7 @@ export const OCRProvider = ({ children }: { children: ReactNode }) => {
         () => ({
             settings, setSettings, serverSettings,
             isSettingsOpen, openSettings, closeSettings,
+            isSetupOpen, openSetup, closeSetup,
             ocrCache, updateOcrData, ocrStatusMap, setOcrStatus,
             mergeAnchor, setMergeAnchor, activeImageSrc, setActiveImageSrc,
             dictPopup, setDictPopup, notifyPopupClosed, wasPopupClosedRecently,
@@ -173,6 +188,7 @@ export const OCRProvider = ({ children }: { children: ReactNode }) => {
         [
             settings, serverSettings, 
             isSettingsOpen, openSettings, closeSettings,
+            isSetupOpen, openSetup, closeSetup,
             ocrCache, updateOcrData, ocrStatusMap, setOcrStatus, 
             mergeAnchor, activeImageSrc, dictPopup, notifyPopupClosed, wasPopupClosedRecently,
             debugLog, addLog,

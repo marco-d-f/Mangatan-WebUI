@@ -34,7 +34,7 @@ const statusDotStyle = (connected: boolean): React.CSSProperties => ({
 
 const MAPPING_OPTIONS = ['None', 'Sentence', 'Image', 'Furigana', 'Reading', 'Target Word', 'Definition', 'Frequency'];
 export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { settings, setSettings, showConfirm, showAlert, showProgress, closeDialog, showDialog } = useOCR();
+    const { settings, setSettings, showConfirm, showAlert, showProgress, closeDialog, showDialog, openSetup } = useOCR();
     const [localSettings, setLocalSettings] = useState(settings);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [dictManagerKey, setDictManagerKey] = useState(0);
@@ -160,25 +160,33 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     };
 
     // --- SETTINGS LOGIC ---
+    const installDictionary = async (language: string) => {
+        try {
+            setIsInstalling(true);
+            setInstallMessage('Checking dictionaries...');
+
+            const res = await apiRequest<{status: string, message: string}>(
+                '/api/yomitan/install-language',
+                { method: 'POST', body: { language } },
+            );
+
+            if (res.status === 'ok' && res.message?.includes('Imported')) {
+                setDictManagerKey(prev => prev + 1);
+            }
+        } catch (e) {
+            console.error("Failed to install dictionary", e);
+        } finally {
+            setIsInstalling(false);
+            setInstallMessage('');
+        }
+    };
+
     const handleChange = async (key: keyof typeof settings | string, value: any) => {
         setLocalSettings((prev) => ({ ...prev, [key]: value }));
 
         if (key === 'enableYomitan' && value === true) {
-             try {
-                setIsInstalling(true);
-                setInstallMessage('Checking dictionaries...');
-                
-                const res = await apiRequest<{status: string, message: string}>('/api/yomitan/install-defaults', { method: 'POST' });
-                
-                if (res.status === 'ok' && res.message.includes('Imported')) {
-                    setDictManagerKey(prev => prev + 1);
-                }
-            } catch (e) { 
-                console.error("Failed to install defaults", e);
-            } finally {
-                setIsInstalling(false);
-                setInstallMessage('');
-            }
+            const language = localSettings.yomitanLanguage || 'japanese';
+            await installDictionary(language);
         }
     };
 
@@ -252,7 +260,10 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         showConfirm('Reset DB?', 'Delete all dictionaries?', async () => {
             try {
                 showProgress('Resetting...');
-                const res = await apiRequest<{status: string}>(`/api/yomitan/reset`, { method: 'POST' });
+                const res = await apiRequest<{status: string}>(`/api/yomitan/reset`, {
+                    method: 'POST',
+                    body: { language: localSettings.yomitanLanguage || 'japanese' },
+                });
                 if (res.status === 'ok') {
                     closeDialog(); 
                     showAlert('Success', 'Reset complete.');
@@ -350,6 +361,24 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                 </div>
                             </div>
                         </label>
+
+                        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <label htmlFor="yomitanLanguage" style={{fontSize: '0.9em', color: '#ccc'}}>Dictionary Language</label>
+                            <select
+                                id="yomitanLanguage"
+                                value={localSettings.yomitanLanguage || 'japanese'}
+                                onChange={(e) => handleChange('yomitanLanguage', e.target.value)}
+                                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: 'white' }}
+                            >
+                                <option value="japanese">Japanese</option>
+                                <option value="english">English</option>
+                                <option value="chinese">Chinese</option>
+                                <option value="korean">Korean</option>
+                            </select>
+                            <div style={{ fontSize: '0.85em', color: '#aaa' }}>
+                                Used when installing or resetting default dictionaries.
+                            </div>
+                        </div>
                         
                         <div style={{
                             maxHeight: showDicts ? '800px' : '0px',
@@ -374,6 +403,7 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                          Group results by term or list every entry.
                                      </div>
                                   </div>
+
 
                                 {isInstalling && (
                                     <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -652,6 +682,24 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                 </div>
                             </label>
                         </div>
+                        {localSettings.debugMode && (
+                            <div style={{ marginTop: '12px' }}>
+                                <button
+                                    type="button"
+                                    onClick={openSetup}
+                                    style={{
+                                        padding: '8px 12px',
+                                        borderRadius: '4px',
+                                        border: '1px solid #444',
+                                        background: '#2a2a2e',
+                                        color: 'white',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Open Setup Wizard
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <h3>Anime Settings</h3>
@@ -805,10 +853,58 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                             </div>
                         </div>
                     </div>
+
+                    <h3>Maintenance</h3>
+                    <div style={sectionBoxStyle}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                                <button
+                                    type="button"
+                                    onClick={resetYomitanDB}
+                                    style={{
+                                        textAlign: 'left',
+                                        padding: '10px 14px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #c0392b',
+                                        background: 'rgba(192, 57, 43, 0.12)',
+                                        color: '#f4d3cf',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        width: 'fit-content',
+                                    }}
+                                >
+                                    Reinstall Dictionary Database
+                                </button>
+                                <div style={{ fontSize: '0.85em', color: '#aaa' }}>
+                                    Deletes all dictionaries and reinstalls the selected language.
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                                <button
+                                    type="button"
+                                    onClick={purgeCache}
+                                    style={{
+                                        textAlign: 'left',
+                                        padding: '10px 14px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #c0392b',
+                                        background: 'rgba(192, 57, 43, 0.12)',
+                                        color: '#f4d3cf',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        width: 'fit-content',
+                                    }}
+                                >
+                                    Clear OCR Cache
+                                </button>
+                                <div style={{ fontSize: '0.85em', color: '#aaa' }}>
+                                    Removes cached OCR results stored on the server.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div className="ocr-modal-footer">
-                    <button type="button" className="danger" onClick={purgeCache}>Purge Cache</button>
-                    <button type="button" className="danger" onClick={resetYomitanDB} style={{ background: '#c0392b', borderColor: '#e74c3c' }}>Reset DB</button>
                     <button type="button" className="warning" onClick={resetToDefaults} style={{ marginRight: 'auto', background: '#e67e22', borderColor: '#d35400' }}>Defaults</button>
                     <button type="button" onClick={onClose}>Cancel</button>
                     <button type="button" className="primary" onClick={save}>Save & Reload</button>

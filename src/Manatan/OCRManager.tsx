@@ -8,6 +8,7 @@ import { SettingsInjector } from './components/SettingsInjector';
 import { YomitanPopup } from './components/YomitanPopup'; 
 import { useOCR } from './context/OCRContext';
 import { GlobalDialog } from './components/GlobalDialog';
+import { SetupWizard } from './components/SetupWizard';
 import { getAppVersion, checkForUpdates, triggerAppUpdate } from './utils/api';
 import { ReadingDirection, ReadingMode } from '@/features/reader/Reader.types.ts';
 
@@ -120,6 +121,7 @@ export const OCRManager = () => {
             <SettingsInjector />
             <ChapterListInjector />
             <GlobalDialog />
+            <SetupWizard />
             
             {images.map(img => (
                 <ImageOverlay key={img.src} img={img} spreadData={getSpreadData(img.src)} />
