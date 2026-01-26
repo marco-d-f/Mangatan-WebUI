@@ -131,9 +131,11 @@ const BaseReaderChapterViewer = ({
     const { t } = useTranslation();
     const { direction: themeDirection } = useTheme();
 
-
-    // If TRUE, we wrap in Zoom Engine. If FALSE, we render standard layout (Raw Stack).
     const isMobile = useIsMobile();
+
+    const isContinuousReadingModeActive = isContinuousReadingMode(readingMode);
+    // If TRUE, we wrap individual chapters in Zoom Engine. If FALSE, we render standard layout (Raw Stack).
+    const isZoomEnabled = isMobile && !isContinuousReadingModeActive;
 
     // --- ZOOM STATE ---
     const [scale, setScale] = useState(1);
@@ -198,7 +200,6 @@ const BaseReaderChapterViewer = ({
 
     const Pager = useMemo(() => getPagerForReadingMode(readingMode), [readingMode]);
     const isLtrReadingDirection = readingDirection === ReadingDirection.LTR;
-    const isContinuousReadingModeActive = isContinuousReadingMode(readingMode);
     const shouldHideChapter = (!isContinuousReadingModeActive && !isCurrentChapter) || isPreloadMode;
 
     const isCurrentChapterInSinglePager = !isContinuousReadingModeActive && isCurrentChapter;
@@ -466,12 +467,12 @@ const BaseReaderChapterViewer = ({
     );
 
     // --- CONDITIONAL RENDERING ---
-    // If NOT Mobile Mode: Render pure content (Original Behavior)
-    if (!isMobile) {
+    // If NOT Zoom Enabled: Render pure content (Original Behavior)
+    if (!isZoomEnabled) {
         return PagerContent;
     }
 
-    // If Mobile Mode: Wrap in Zoom Engine
+    // If Zoom Enabled: Wrap in Zoom Engine
     const isVertical = isContinuousVerticalReadingMode(readingMode);
     const isHorizontalContinuous = readingMode === ReadingMode.CONTINUOUS_HORIZONTAL;
     
