@@ -17,6 +17,7 @@ import { getOptionForDirection } from '@/features/theme/services/ThemeCreator.ts
 import { useIntersectionObserver } from '@/base/hooks/useIntersectionObserver.tsx';
 import { getReaderScrollbarStore, useReaderSettingsStore } from '@/features/reader/stores/ReaderStore.ts';
 import { ReaderControls } from '@/features/reader/services/ReaderControls.ts';
+import { useReaderZoom } from '@/features/reader/zoom/ReaderZoomContext';
 
 interface ElementIntersection {
     start: boolean;
@@ -30,40 +31,7 @@ interface ElementIntersectionInfo {
 type PageType = 'first' | 'last';
 
 const OPEN_CHAPTER_INTERSECTION_RATIO = 0;
-const INTERSECTION_THRESHOLD = '-10px';
-
-const getRootMargin = (
-    pageType: PageType,
-    readingMode: ReadingMode,
-    readingDirection: ReadingDirection,
-): string | undefined => {
-    if (!isContinuousReadingMode(readingMode)) {
-        return undefined;
-    }
-
-    const themeDirectionOfReadingDirection = READING_DIRECTION_TO_THEME_DIRECTION[readingDirection];
-
-    const firstPageMarginHorizontal = `0px ${INTERSECTION_THRESHOLD} 0px 0px`;
-    const lastPageMarginHorizontal = `0px 0px 0px ${INTERSECTION_THRESHOLD}`;
-
-    if (isContinuousVerticalReadingMode(readingMode)) {
-        if (pageType === 'first') {
-            return `0px 0px ${INTERSECTION_THRESHOLD} 0px`;
-        }
-
-        return `${INTERSECTION_THRESHOLD} 0px 0px 0px`;
-    }
-
-    if (pageType === 'first') {
-        return getOptionForDirection(
-            firstPageMarginHorizontal,
-            lastPageMarginHorizontal,
-            themeDirectionOfReadingDirection,
-        );
-    }
-
-    return getOptionForDirection(lastPageMarginHorizontal, firstPageMarginHorizontal, themeDirectionOfReadingDirection);
-};
+const BASE_MARGIN = 10;
 
 const getElementIntersectionInfoHorizontal = (
     readingDirection: ReadingDirection,
@@ -253,6 +221,47 @@ export const useReaderInfiniteScrollUpdateChapter = (
             shouldShowTransitionPage: state.settings.shouldShowTransitionPage,
         }),
     );
+    const { scale } = useReaderZoom();
+
+    const scaledMargin = useMemo(() => {
+      const adjustedMargin = Math.round(BASE_MARGIN * scale);
+      return `-${adjustedMargin}px`;
+    }, [scale]);
+
+
+    const getRootMarginWithScale = useCallback((
+        pageType: PageType,
+        readingMode: ReadingMode,
+        readingDirection: ReadingDirection,
+      ): string | undefined => {
+        if (!isContinuousReadingMode(readingMode)) {
+            return undefined;
+        }
+        
+        // Use the scaled margin instead of fixed intersection threshold
+        const themeDirectionOfReadingDirection = READING_DIRECTION_TO_THEME_DIRECTION[readingDirection];
+
+        if (isContinuousVerticalReadingMode(readingMode)) {
+          return pageType === 'first' 
+            ? `0px 0px ${scaledMargin} 0px`
+            : `${scaledMargin} 0px 0px 0px`;
+        }
+
+        const firstPageMarginHorizontal = `0px ${scaledMargin} 0px 0px`;
+        const lastPageMarginHorizontal = `0px 0px 0px ${scaledMargin}`;
+
+        return pageType === 'first'
+          ? getOptionForDirection(
+                firstPageMarginHorizontal, 
+                lastPageMarginHorizontal, 
+                themeDirectionOfReadingDirection
+            )
+          : getOptionForDirection(
+                lastPageMarginHorizontal, 
+                firstPageMarginHorizontal, 
+                themeDirectionOfReadingDirection
+            );
+      }, [scaledMargin]);
 
     useEffect(() => {
         const isContinuousReadingModeActive = isContinuousReadingMode(readingMode);
@@ -369,7 +378,7 @@ export const useReaderInfiniteScrollUpdateChapter = (
             () => ({
                 root: scrollElement,
                 threshold: [OPEN_CHAPTER_INTERSECTION_RATIO],
-                rootMargin: getRootMargin(pageType, readingMode, readingDirection),
+                rootMargin: getRootMarginWithScale(pageType, readingMode, readingDirection),
                 // gets immediately observed once on initial render
                 ignoreInitialObserve: true,
             }),

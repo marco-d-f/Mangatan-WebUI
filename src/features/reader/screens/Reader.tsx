@@ -45,6 +45,7 @@ import {
 } from '@/features/reader/stores/ReaderStore.ts';
 
 import { ReaderAutoScroll } from '@/features/reader/auto-scroll/ReaderAutoScroll.tsx';
+import { ReaderZoomProvider } from '../zoom/ReaderZoomContext';
 
 const BaseReader = ({
     setOverride,
@@ -228,27 +229,29 @@ const BaseReader = ({
     }
 
     return (
-        <Box
-            sx={{
-                position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: `calc(100vw - ${readerNavBarWidth}px)`,
-                maxWidth: `calc(100vw - ${readerNavBarWidth}px)`,
-                width: `calc(100vw - ${readerNavBarWidth}px)`,
-                height: `100vh`,
-                marginLeft: `${readerNavBarWidth}px`,
-                transition: (theme) =>
-                    `width 0.${theme.transitions.duration.shortest}s, margin-left 0.${theme.transitions.duration.shortest}s`,
-                overflow: 'auto',
-                backgroundColor: READER_BACKGROUND_TO_COLOR[backgroundColor],
-            }}
-        >
-            <ReaderViewer ref={scrollElementRef} />
-            <TapZoneLayout />
-            <ReaderRGBAFilter />
-            <ReaderAutoScroll />
-        </Box>
+        <ReaderZoomProvider>
+            <Box
+                sx={{
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minWidth: `calc(100vw - ${readerNavBarWidth}px)`,
+                    maxWidth: `calc(100vw - ${readerNavBarWidth}px)`,
+                    width: `calc(100vw - ${readerNavBarWidth}px)`,
+                    height: `100vh`,
+                    marginLeft: `${readerNavBarWidth}px`,
+                    transition: (theme) =>
+                        `width 0.${theme.transitions.duration.shortest}s, margin-left 0.${theme.transitions.duration.shortest}s`,
+                    overflow: 'auto',
+                    backgroundColor: READER_BACKGROUND_TO_COLOR[backgroundColor],
+                }}
+            >
+                <ReaderViewer ref={scrollElementRef} />
+                <TapZoneLayout />
+                <ReaderRGBAFilter />
+                <ReaderAutoScroll />
+            </Box>
+        </ReaderZoomProvider>
     );
 };
 

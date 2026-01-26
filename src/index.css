@@ -301,3 +301,23 @@ body:has(.ocr-modal) .ocr-overlay-container {
 .ocr-chapter-btn.loading { border: none; color: #888; }
 .yomitan-ghost-text { min-width: 1ch; display: inline-block; user-select: none !important; pointer-events: none !important; }
 .yomitan-ghost-text::after { content: attr(data-text); visibility: visible; }
+
+/* --- MOBILE ZOOM --- */
+/* Prevent pull-to-refresh interference when zoomed */
+body.reader-zoomed { overscroll-behavior: none; }
+/* Smooth scroll container behavior */
+.reader-scroll-container { -webkit-overflow-scrolling: touch; scroll-behavior: auto; }
+/* Prevent unwanted highlights during gestures */
+.reader-zoom-wrapper { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+/* During pinch, prevent image dragging */
+body.reader-zoomed img { pointer-events: none; -webkit-user-drag: none; }
+/* Hide scrollbars on mobile when zoomed */
+@media (hover: none) and (pointer: coarse) {
+  body.reader-zoomed .reader-scroll-container::-webkit-scrollbar {
+    display: none;
+  }
+  
+  body.reader-zoomed .reader-scroll-container {
+    scrollbar-width: none;
+  }
+}
