@@ -53,7 +53,7 @@ export const useMouseDragScroll = (
             }
 
             const isRTLDirection = elementStyle.current.direction === 'rtl';
-            const isFlexDirectionReversed = elementStyle.current.flexDirection === 'row';
+            const isFlexDirectionReversed = elementStyle.current.flexDirection === 'row-reverse';
 
             return isRTLDirection || (!isRTLDirection && isFlexDirectionReversed);
         };

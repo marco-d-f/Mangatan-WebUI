@@ -356,12 +356,15 @@ const BaseReaderViewer = ({
                     isContinuousVerticalReadingModeActive && shouldApplyReaderWidth(readerWidth, pageScaleMode),
                     { alignItems: 'center' },
                 ),
-                ...applyStyles(!isContinuousVerticalReadingModeActive, {
+                ...applyStyles(!isContinuousReadingModeActive, {
+                    flexDirection: 'row'
+                }),
+                ...applyStyles(isContinuousReadingModeActive && !isContinuousVerticalReadingModeActive, {
                     ...applyStyles(themeDirection === 'ltr', {
-                        flexDirection: isLtrReadingDirection ? 'row' : 'row',
+                        flexDirection: isLtrReadingDirection ? 'row' : 'row-reverse',
                     }),
                     ...applyStyles(themeDirection === 'rtl', {
-                        flexDirection: isLtrReadingDirection ? 'row' : 'row',
+                        flexDirection: isLtrReadingDirection ? 'row-reverse' : 'row',
                     }),
                 }),
             }}
