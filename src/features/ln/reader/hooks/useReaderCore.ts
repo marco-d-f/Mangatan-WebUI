@@ -13,6 +13,7 @@ import {
     createTouchState,
     handleTouchEnd,
 } from '../utils/navigation';
+import { ReadingPosition } from '../types/progress';
 
 interface UseReaderCoreProps {
     bookId: string;
@@ -58,6 +59,7 @@ interface UseReaderCoreReturn {
     navOptions: NavigationOptions;
     isReady: boolean;
     currentProgress: number;
+    currentPosition: ReadingPosition | null;
     reportScroll: () => void;
     reportChapterChange: (chapter: number, page?: number) => void;
     reportPageChange: (page: number, total?: number) => void;
@@ -184,6 +186,68 @@ export function useReaderCore({
         }
     }, []);
 
+
+
+
+    const isNearText = useCallback((x: number, y: number): boolean => {
+        let range: Range | null = null;
+
+        if (document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(x, y);
+        } else if ((document as any).caretPositionFromPoint) {
+            const pos = (document as any).caretPositionFromPoint(x, y);
+            if (pos) {
+                range = document.createRange();
+                range.setStart(pos.offsetNode, pos.offset);
+            }
+        }
+
+        if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) {
+            return false;
+        }
+
+        const node = range.startContainer;
+        const text = node.textContent || '';
+        if (!text.trim()) return false;
+
+        const offset = range.startOffset;
+        const textLen = text.length;
+
+        const candidates: number[] = [];
+        if (offset > 0) candidates.push(offset - 1);
+        if (offset < textLen) candidates.push(offset);
+        if (offset + 1 < textLen) candidates.push(offset + 1);
+        if (candidates.length === 0) candidates.push(0);
+
+        const MARGIN_X = 35;
+        const MARGIN_Y = 45;
+
+        for (const candidateOffset of candidates) {
+            const char = text[candidateOffset];
+
+            if (!char || /\s/.test(char)) continue;
+
+            if (node.parentElement?.closest('rt, rp')) continue;
+
+            try {
+                const charRange = document.createRange();
+                charRange.setStart(node, candidateOffset);
+                charRange.setEnd(node, candidateOffset + 1);
+                const rect = charRange.getBoundingClientRect();
+
+                const insideX = x >= rect.left - MARGIN_X && x <= rect.right + MARGIN_X;
+                const insideY = y >= rect.top - MARGIN_Y && y <= rect.bottom + MARGIN_Y;
+
+                if (insideX && insideY) {
+                    return true;
+                }
+            } catch (err) {
+                continue;
+            }
+        }
+
+        return false;
+    }, []);
     const handleTouchEndEvent = useCallback(
         (e: React.TouchEvent, navCallbacks: NavigationCallbacks) => {
             if (!touchStartRef.current) return;
@@ -197,34 +261,114 @@ export function useReaderCore({
             touchStartRef.current = null;
 
             if (!result && !isDraggingRef.current) {
-                onToggleUI?.();
+                const touch = e.changedTouches[0];
+                if (touch) {
+                    const nearText = isNearText(touch.clientX, touch.clientY);
+
+                    if (!nearText) {
+                        onToggleUI?.();
+                    }
+                } else {
+                    onToggleUI?.();
+                }
             }
         },
-        [navOptions, onToggleUI]
+        [navOptions, onToggleUI, isNearText]
     );
-
-
     const handleContentClick = useCallback(
         async (e: React.MouseEvent) => {
-            if (isDraggingRef.current) return;
+            console.log('[handleContentClick] Click event triggered');
 
-            const target = e.target as HTMLElement;
-            if (
-                target.closest(
-                    'a, button, img, ruby rt, .nav-btn, .reader-progress, .reader-slider-wrap'
-                )
-            ) {
+            if (isDraggingRef.current) {
+                console.log('[handleContentClick] Ignoring - user is dragging');
                 return;
             }
 
-            const didLookup = await tryLookup(e);
-            if (!didLookup) {
+            const target = e.target as HTMLElement;
+            console.log('[handleContentClick] Click target:', target);
+
+            const link = target.closest('a');
+            if (link) {
+                console.log('[handleContentClick] Found link element:', link);
+                const href = link.getAttribute('href');
+                console.log('[handleContentClick] Link href:', href);
+
+                if (href?.startsWith('#')) {
+                    e.preventDefault();
+                    const targetId = href.substring(1);
+                    console.log('[handleContentClick] Internal anchor, looking for ID:', targetId);
+
+                    let targetElement = document.getElementById(targetId);
+                    console.log('[handleContentClick] Found by getElementById:', targetElement);
+
+                    if (!targetElement) {
+                        try {
+                            targetElement = document.querySelector(`[id="${CSS.escape(targetId)}"]`) as HTMLElement;
+                            console.log('[handleContentClick] Found by querySelector:', targetElement);
+                        } catch (err) {
+                            console.error('[handleContentClick] CSS.escape failed:', err);
+                        }
+                    }
+
+                    if (targetElement) {
+                        console.log('[handleContentClick] Scrolling to element:', targetElement);
+                        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    } else {
+                        console.warn('[handleContentClick] Anchor target not found:', targetId);
+                        const allIds = Array.from(document.querySelectorAll('[id]')).map(el => ({
+                            id: el.id,
+                            tag: el.tagName,
+                            text: el.textContent?.substring(0, 50)
+                        }));
+                        console.log('[handleContentClick] Available IDs in document:', allIds);
+                    }
+                } else if (href?.startsWith('http')) {
+                    e.preventDefault();
+                    console.log('[handleContentClick] External link, opening:', href);
+                    window.open(href, '_blank', 'noopener,noreferrer');
+                } else if (href?.includes('.html')) {
+                    // Cross-chapter link (e.g., "part0028.html#anchor")
+                    e.preventDefault();
+                    console.log('[handleContentClick] Cross-chapter link detected:', href);
+
+                    // This needs to be handled by the parent - we can't navigate chapters from here
+                    // Dispatch a custom event that the reader can listen to
+                    const linkEvent = new CustomEvent('epub-link-clicked', {
+                        detail: { href },
+                        bubbles: true
+                    });
+                    console.log('[handleContentClick] Dispatching epub-link-clicked event');
+                    e.currentTarget.dispatchEvent(linkEvent);
+                } else {
+                    console.log('[handleContentClick] Unknown link type, preventing default:', href);
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            console.log('[handleContentClick] Not a link, checking if should ignore...');
+
+            if (target.closest(
+                'button, img, ruby rt, .nav-btn, .reader-progress-bar, .reader-slider-wrap, .dict-popup, .progress-lock-btn'
+            )) {
+                console.log('[handleContentClick] Ignoring - clicked on UI element');
+                return;
+            }
+
+            console.log('[handleContentClick] Checking if near text...');
+            const nearText = isNearText(e.clientX, e.clientY);
+            console.log('[handleContentClick] Near text result:', nearText);
+
+            if (nearText) {
+                console.log('[handleContentClick] Triggering lookup');
+                await tryLookup(e);
+            } else {
+                console.log('[handleContentClick] Toggling UI');
                 onToggleUI?.();
             }
         },
-        [tryLookup, onToggleUI]
+        [isNearText, tryLookup, onToggleUI, containerRef]
     );
-
     const isDragging = useCallback(() => isDraggingRef.current, []);
 
 
@@ -251,6 +395,7 @@ export function useReaderCore({
         navOptions,
         isReady,
         currentProgress,
+        currentPosition,
         reportScroll,
         reportChapterChange,
         reportPageChange,

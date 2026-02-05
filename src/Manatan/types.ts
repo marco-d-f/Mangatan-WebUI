@@ -1,9 +1,9 @@
 export interface Rect { x: number; y: number; width: number; height: number; rotation?: number; }
-
+import { AnimeHotkey, DEFAULT_ANIME_HOTKEYS } from '@/Manatan/hotkeys/AnimeHotkeys.ts';
 export interface OcrBlock {
     text: string;
     tightBoundingBox: Rect;
-    forcedOrientation?: 'vertical' | 'horizontal' | 'auto';
+    forcedOrientation?: 'vertical' | 'horizontal';
     isMerged?: boolean;
 }
 
@@ -15,7 +15,58 @@ export interface SiteConfig {
 
 // Added 'dark' to the allowed types
 export type ColorTheme = 'blue' | 'red' | 'green' | 'orange' | 'purple' | 'turquoise' | 'pink' | 'grey' | 'white' | 'dark';
-export type YomitanLanguage = 'japanese' | 'english' | 'chinese' | 'korean';
+export type YomitanLanguage =
+    | 'japanese'
+    | 'english'
+    | 'chinese'
+    | 'korean'
+    | 'arabic'
+    | 'spanish'
+    | 'french'
+    | 'german'
+    | 'portuguese'
+    | 'bulgarian'
+    | 'czech'
+    | 'danish'
+    | 'greek'
+    | 'estonian'
+    | 'persian'
+    | 'finnish'
+    | 'hebrew'
+    | 'hindi'
+    | 'hungarian'
+    | 'indonesian'
+    | 'italian'
+    | 'latin'
+    | 'lao'
+    | 'latvian'
+    | 'georgian'
+    | 'kannada'
+    | 'khmer'
+    | 'mongolian'
+    | 'maltese'
+    | 'dutch'
+    | 'norwegian'
+    | 'polish'
+    | 'romanian'
+    | 'russian'
+    | 'swedish'
+    | 'thai'
+    | 'tagalog'
+    | 'turkish'
+    | 'ukrainian'
+    | 'vietnamese'
+    | 'welsh'
+    | 'cantonese';
+
+export type WordAudioSource =
+    | 'jpod101'
+    | 'language-pod-101'
+    | 'jisho'
+    | 'lingua-libre'
+    | 'wiktionary';
+
+export type WordAudioSourceSelection = WordAudioSource | 'auto';
 
 export interface ServerSettingsData { authUsername?: string; authPassword?: string; }
 
@@ -29,16 +80,20 @@ export interface Settings {
     boundingBoxAdjustment: number;
     subtitleFontSize: number;
     subtitleFontWeight: number;
+    animeSubtitleHoverLookup: boolean;
+    animeSubtitleHoverAutoResume: boolean;
+    animeHotkeys: Record<AnimeHotkey, string[]>;
     tapZonePercent: number;
     jimakuApiKey?: string;
     yomitanLanguage: YomitanLanguage;
-    textOrientation: 'smart' | 'forceVertical' | 'forceHorizontal';
     debugMode: boolean;
     mobileMode: boolean;
     soloHoverMode: boolean;
     enableOverlay: boolean;
-    addSpaceOnMerge: boolean;
+    enableDoubleClickEdit: boolean;
+    enableDoubleTapZoom: boolean;
     disableStatusIcon: boolean;
+    autoPlayWordAudio: boolean;
     enableYomitan: boolean;
     deleteModifierKey: string;
     mergeModifierKey: string;
@@ -52,6 +107,9 @@ export interface Settings {
     ankiModel?: string;
     ankiFieldMap?: Record<string, string>;
     ankiCheckDuplicates?: boolean;
+    skipAnkiUpdateConfirm: boolean;
+    showHarmonicMeanFreq: boolean;
+    ankiFreqMode: string;
     // Light Novel Settings
     lnFontSize: number;
     lnLineHeight: number;
@@ -65,8 +123,11 @@ export interface Settings {
     lnTextAlign: 'left' | 'center' | 'justify';
     lnLetterSpacing: number;
     lnParagraphSpacing: number;
+    lnDisableAnimations: boolean;
+    lnLockProgressBar?: boolean;
+    lnShowCharProgress?: boolean;
     // Dropdown setting for grouping behavior
-    resultGroupingMode: 'grouped' | 'flat'; 
+    resultGroupingMode: 'grouped' | 'flat';
 
 }
 
@@ -79,12 +140,12 @@ export type OcrStatus = 'idle' | 'loading' | 'success' | 'error';
 export interface DictionaryResult {
     headword: string;
     reading: string;
-    furigana?: string[][]; 
-    definitions: DictionaryDefinition[];
+    furigana?: string[][];
+    glossary: DictionaryDefinition[];
     forms?: { headword: string; reading: string }[];
     source?: number;
-    matchLen?: number; 
-    termTags?: string[];
+    matchLen?: number;
+    termTags?: Array<string | { name?: string; label?: string; tag?: string; value?: string }>;
     frequencies?: any[];
 
 }
@@ -97,7 +158,7 @@ export interface DictionaryDefinition {
 
 export interface DictPopupContext {
     imgSrc?: string;
-    spreadData?: { leftSrc: string; rightSrc: string }; 
+    spreadData?: { leftSrc: string; rightSrc: string };
     sentence: string;
     source?: {
         kind: 'manga' | 'ln';
@@ -125,7 +186,7 @@ export interface DictPopupState {
             chapterIndex?: number;
         };
     };
-    context?: DictPopupContext; 
+    context?: DictPopupContext;
 }
 
 // --- GLOBAL DIALOG STATE ---
@@ -136,6 +197,11 @@ export interface DialogState {
     message: React.ReactNode;
     onConfirm?: () => void;
     onCancel?: () => void;
+    extraAction?: {
+        label: string;
+        onClick: () => void;
+        closeOnClick?: boolean;
+    };
 }
 
 // --- ENVIRONMENT DETECTION ---
@@ -158,19 +224,23 @@ export const DEFAULT_SETTINGS: Settings = {
     boundingBoxAdjustment: 5,
     subtitleFontSize: 22,
     subtitleFontWeight: 600,
+    animeSubtitleHoverLookup: true,
+    animeSubtitleHoverAutoResume: false,
+    animeHotkeys: DEFAULT_ANIME_HOTKEYS,
     tapZonePercent: 30,
     jimakuApiKey: '',
     yomitanLanguage: 'japanese',
-    textOrientation: 'smart',
     debugMode: false,
     mobileMode: false,
     soloHoverMode: true,
     enableOverlay: true,
-    addSpaceOnMerge: false,
+    enableDoubleClickEdit: false,
+    enableDoubleTapZoom: false,
     disableStatusIcon: false,
+    autoPlayWordAudio: false,
     enableYomitan: ENABLE_YOMITAN_DEFAULT,
     // Default to grouped
-    resultGroupingMode: 'grouped', 
+    resultGroupingMode: 'grouped',
     deleteModifierKey: 'Alt',
     mergeModifierKey: 'Control',
     site: {
@@ -191,6 +261,9 @@ export const DEFAULT_SETTINGS: Settings = {
     ankiModel: '',
     ankiFieldMap: {},
     ankiCheckDuplicates: true,
+    skipAnkiUpdateConfirm: false,
+    showHarmonicMeanFreq: false,
+    ankiFreqMode: 'lowest',
     // LN Defaults
     lnFontSize: 16,
     lnLineHeight: 1.6,
@@ -204,6 +277,9 @@ export const DEFAULT_SETTINGS: Settings = {
     lnTextAlign: 'justify',
     lnLetterSpacing: 0,
     lnParagraphSpacing: 1.5,
+    lnDisableAnimations: true,
+    lnLockProgressBar: false,
+    lnShowCharProgress: false
 };
 
 export const COLOR_THEMES: Record<ColorTheme, { accent: string; background: string }> = {

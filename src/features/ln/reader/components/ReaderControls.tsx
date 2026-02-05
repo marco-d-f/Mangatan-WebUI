@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Drawer, Box, Typography, Slider, Select, MenuItem,
     FormControl, InputLabel, IconButton, Divider, Switch,
     FormControlLabel, ToggleButtonGroup, ToggleButton,
-    SelectChangeEvent, Button, InputAdornment,
+    SelectChangeEvent, Button, InputAdornment, TextField,
 } from '@mui/material';
+import { alpha, useTheme, type Theme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -12,14 +13,6 @@ import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
 import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
 import FormatAlignJustifyIcon from '@mui/icons-material/FormatAlignJustify';
 import { Settings } from '@/Manatan/types';
-import { TextField } from '@mui/material';
-
-const THEMES = {
-    light: { name: 'Light', bg: '#FFFFFF', fg: '#1a1a1a', preview: '#FFFFFF' },
-    sepia: { name: 'Sepia', bg: '#F4ECD8', fg: '#5C4B37', preview: '#F4ECD8' },
-    dark: { name: 'Dark', bg: '#2B2B2B', fg: '#E0E0E0', preview: '#2B2B2B' },
-    black: { name: 'Black', bg: '#000000', fg: '#CCCCCC', preview: '#000000' },
-} as const;
 const CUSTOM_FONT_VALUE = '__custom__';
 
 // A safe cross-language fallback stack 
@@ -27,29 +20,27 @@ const UNIVERSAL_FALLBACK_STACK =
     'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", serif';
 
 const FONT_PRESETS = [
-    { label: 'System (Default)', value: UNIVERSAL_FALLBACK_STACK },
-    { label: 'Serif ', value: 'Georgia, "Times New Roman", Times, serif' },
-    { label: 'Sans ', value: 'Arial, Helvetica, sans-serif' },
-    { label: 'Noto Serif JP', value: '"Noto Serif JP", serif' },
-    { label: 'Noto Sans JP', value: '"Noto Sans JP", sans-serif' },
+    { label: 'Serif', value: '"Noto Serif JP", "Noto Serif KR", "Noto Serif SC", "Noto Serif TC", serif' },
+    { label: 'Shippori Mincho', value: '"Shippori Mincho", serif' },
+    { label: 'Klee One', value: '"Klee One", serif' },
+    { label: 'Sans-Serif', value: '"Noto Sans JP", "Noto Sans KR", "Noto Sans SC", "Noto Sans TC", sans-serif' },
+    { label: 'Yu Mincho', value: '"Yu Mincho", "YuMincho", serif' },
+    { label: 'Yu Gothic', value: '"Yu Gothic", "YuGothic", sans-serif' },
+    { label: 'System', value: UNIVERSAL_FALLBACK_STACK },
 ];
+
 function getPrimaryFontName(fontFamily: string): string {
     const first = (fontFamily || '').split(',')[0]?.trim() ?? '';
-    return first.replace(/^["']|["']$/g, ''); // strip quotes
+    return first.replace(/^["']|["']$/g, '');
 }
 
 function buildFontFamilyFromCustomName(name: string): string {
     const raw = (name || '').trim();
-
     if (!raw) return UNIVERSAL_FALLBACK_STACK;
-
     const safe = raw.replace(/,/g, '').trim();
-
     if (!safe) return UNIVERSAL_FALLBACK_STACK;
-
     const needsQuotes = /\s/.test(safe);
     const font = needsQuotes ? `"${safe.replace(/"/g, '')}"` : safe;
-
     return `${font}, ${UNIVERSAL_FALLBACK_STACK}`;
 }
 
@@ -57,28 +48,28 @@ function findMatchingPreset(value: string): string | null {
     const match = FONT_PRESETS.find(p => p.value === value);
     return match ? match.value : null;
 }
+
 interface Props {
     open: boolean;
     onClose: () => void;
     settings: Settings;
     onUpdateSettings: (key: keyof Settings, value: any) => void;
     onResetSettings?: () => void;
-    theme: { bg: string; fg: string };
 }
 
-const getMenuProps = (theme: { bg: string; fg: string }) => ({
+const getMenuProps = (theme: Theme) => ({
     sx: { zIndex: 2100 },
     PaperProps: {
         sx: {
-            bgcolor: theme.bg,
-            color: theme.fg,
-            border: `1px solid ${theme.fg}22`,
+            bgcolor: theme.palette.background.paper,
+            color: theme.palette.text.primary,
+            border: `1px solid ${theme.palette.divider}`,
             boxShadow: 3,
             '& .MuiMenuItem-root': {
-                '&:hover': { bgcolor: `${theme.fg}11` },
+                '&:hover': { bgcolor: theme.palette.action.hover },
                 '&.Mui-selected': {
-                    bgcolor: `${theme.fg}22`,
-                    '&:hover': { bgcolor: `${theme.fg}33` },
+                    bgcolor: theme.palette.action.selected,
+                    '&:hover': { bgcolor: alpha(theme.palette.action.selected, 0.7) },
                 },
             },
         },
@@ -86,17 +77,33 @@ const getMenuProps = (theme: { bg: string; fg: string }) => ({
     keepMounted: true,
 });
 
-const getSelectStyles = (theme: { bg: string; fg: string }) => ({
-    color: theme.fg,
-    '& .MuiOutlinedInput-notchedOutline': { borderColor: `${theme.fg}44` },
-    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: `${theme.fg}66` },
-    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: theme.fg },
-    '& .MuiSvgIcon-root': { color: theme.fg },
-    '& .MuiInputBase-input': { color: theme.fg },
-    '& .MuiSelect-select': { color: theme.fg },
-    '& .MuiInputLabel-root': { color: `${theme.fg}aa` },
-    '& .MuiInputLabel-root.Mui-focused': { color: theme.fg },
-    '& .MuiFormHelperText-root': { color: `${theme.fg}aa` },
+const getSelectStyles = (theme: Theme) => ({
+    color: theme.palette.text.primary,
+    '& .MuiOutlinedInput-notchedOutline': { borderColor: theme.palette.divider },
+    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: theme.palette.text.secondary },
+    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: theme.palette.primary.main },
+    '& .MuiSvgIcon-root': { color: theme.palette.text.secondary },
+    '& .MuiInputBase-input': { color: theme.palette.text.primary },
+    '& .MuiSelect-select': { color: theme.palette.text.primary },
+    '& .MuiInputLabel-root': { color: theme.palette.text.secondary },
+    '& .MuiInputLabel-root.Mui-focused': { color: theme.palette.primary.main },
+    '& .MuiFormHelperText-root': { color: theme.palette.text.secondary },
+});
+
+const getInputStyles = (theme: Theme) => ({
+    width: '100px',
+    '& input': {
+        textAlign: 'center',
+        padding: '6px 8px',
+        fontSize: '0.875rem',
+        color: theme.palette.text.primary,
+        fontWeight: 600,
+    },
+    '& .MuiOutlinedInput-root': {
+        '& fieldset': { borderColor: theme.palette.divider },
+        '&:hover fieldset': { borderColor: theme.palette.text.secondary },
+        '&.Mui-focused fieldset': { borderColor: theme.palette.primary.main },
+    },
 });
 
 export const ReaderControls: React.FC<Props> = ({
@@ -105,10 +112,104 @@ export const ReaderControls: React.FC<Props> = ({
     settings,
     onUpdateSettings,
     onResetSettings,
-    theme,
 }) => {
-    const menuProps = getMenuProps(theme);
-    const selectStyles = getSelectStyles(theme);
+    const muiTheme = useTheme();
+    const menuProps = getMenuProps(muiTheme);
+    const selectStyles = getSelectStyles(muiTheme);
+
+    // Local state for manual inputs
+    const [fontSizeInput, setFontSizeInput] = useState(settings.lnFontSize.toString());
+    const [lineHeightInput, setLineHeightInput] = useState(settings.lnLineHeight.toFixed(1));
+    const [letterSpacingInput, setLetterSpacingInput] = useState(settings.lnLetterSpacing.toString());
+    const [pageMarginInput, setPageMarginInput] = useState(settings.lnPageMargin.toString());
+
+    // Sync local state when settings change
+    React.useEffect(() => {
+        setFontSizeInput(settings.lnFontSize.toString());
+        setLineHeightInput(settings.lnLineHeight.toFixed(1));
+        setLetterSpacingInput(settings.lnLetterSpacing.toString());
+        setPageMarginInput(settings.lnPageMargin.toString());
+    }, [settings.lnFontSize, settings.lnLineHeight, settings.lnLetterSpacing, settings.lnPageMargin]);
+
+    const handleFontSizeChange = (value: string) => {
+        setFontSizeInput(value);
+        const num = parseInt(value, 10);
+        if (!isNaN(num) && num >= 12 && num <= 50) {
+            onUpdateSettings('lnFontSize', num);
+        }
+    };
+
+    const handleFontSizeBlur = () => {
+        const num = parseInt(fontSizeInput, 10);
+        if (isNaN(num) || num < 12) {
+            setFontSizeInput('12');
+            onUpdateSettings('lnFontSize', 12);
+        } else if (num > 50) {
+            setFontSizeInput('50');
+            onUpdateSettings('lnFontSize', 50);
+        }
+    };
+
+    const handleLineHeightChange = (value: string) => {
+        setLineHeightInput(value);
+        const num = parseFloat(value);
+        if (!isNaN(num) && num >= 1.2 && num <= 2.5) {
+            onUpdateSettings('lnLineHeight', num);
+        }
+    };
+
+    const handleLineHeightBlur = () => {
+        const num = parseFloat(lineHeightInput);
+        if (isNaN(num) || num < 1.2) {
+            setLineHeightInput('1.2');
+            onUpdateSettings('lnLineHeight', 1.2);
+        } else if (num > 2.5) {
+            setLineHeightInput('2.5');
+            onUpdateSettings('lnLineHeight', 2.5);
+        } else {
+            setLineHeightInput(num.toFixed(1));
+        }
+    };
+
+    const handleLetterSpacingChange = (value: string) => {
+        setLetterSpacingInput(value);
+        const num = parseFloat(value);
+        if (!isNaN(num) && num >= -2 && num <= 5) {
+            onUpdateSettings('lnLetterSpacing', num);
+        }
+    };
+
+    const handleLetterSpacingBlur = () => {
+        const num = parseFloat(letterSpacingInput);
+        if (isNaN(num) || num < -2) {
+            setLetterSpacingInput('-2');
+            onUpdateSettings('lnLetterSpacing', -2);
+        } else if (num > 5) {
+            setLetterSpacingInput('5');
+            onUpdateSettings('lnLetterSpacing', 5);
+        } else {
+            setLetterSpacingInput(num.toString());
+        }
+    };
+
+    const handlePageMarginChange = (value: string) => {
+        setPageMarginInput(value);
+        const num = parseInt(value, 10);
+        if (!isNaN(num) && num >= 0 && num <= 80) {
+            onUpdateSettings('lnPageMargin', num);
+        }
+    };
+
+    const handlePageMarginBlur = () => {
+        const num = parseInt(pageMarginInput, 10);
+        if (isNaN(num) || num < 0) {
+            setPageMarginInput('0');
+            onUpdateSettings('lnPageMargin', 0);
+        } else if (num > 80) {
+            setPageMarginInput('80');
+            onUpdateSettings('lnPageMargin', 80);
+        }
+    };
 
     return (
         <Drawer
@@ -118,8 +219,8 @@ export const ReaderControls: React.FC<Props> = ({
             sx={{ zIndex: 2000 }}
             PaperProps={{
                 sx: {
-                    bgcolor: theme.bg,
-                    color: theme.fg,
+                    bgcolor: 'background.paper',
+                    color: 'text.primary',
                     borderTopLeftRadius: 16,
                     borderTopRightRadius: 16,
                     maxHeight: '85vh',
@@ -133,51 +234,11 @@ export const ReaderControls: React.FC<Props> = ({
                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
                         Reader Settings
                     </Typography>
-                    <IconButton onClick={onClose} sx={{ color: theme.fg }}>
+                    <IconButton onClick={onClose} sx={{ color: 'text.primary' }}>
                         <CloseIcon />
                     </IconButton>
                 </Box>
-
-                {/* Theme Selection */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, opacity: 0.8 }}>
-                        Theme
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1.5 }}>
-                        {Object.entries(THEMES).map(([key, t]) => (
-                            <Box
-                                key={key}
-                                onClick={() => onUpdateSettings('lnTheme', key)}
-                                sx={{
-                                    flex: 1,
-                                    height: 60,
-                                    borderRadius: 2,
-                                    bgcolor: t.preview,
-                                    border: settings.lnTheme === key
-                                        ? '3px solid #4890ff'
-                                        : `2px solid ${theme.fg}44`,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: 0.5,
-                                    transition: 'all 0.2s',
-                                    '&:hover': { transform: 'scale(1.05)', boxShadow: 2 },
-                                }}
-                            >
-                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: t.fg }}>
-                                    {t.name}
-                                </Typography>
-                                <Typography sx={{ fontSize: '1.2rem', fontWeight: 600, color: t.fg }}>
-                                    Aa
-                                </Typography>
-                            </Box>
-                        ))}
-                    </Box>
-                </Box>
-
-                <Divider sx={{ my: 3, borderColor: `${theme.fg}22` }} />
+                <Divider sx={{ my: 3, borderColor: 'divider' }} />
 
                 {/* Typography Section */}
                 <Box sx={{ mb: 3 }}>
@@ -195,22 +256,18 @@ export const ReaderControls: React.FC<Props> = ({
                             return (
                                 <>
                                     <FormControl fullWidth size="small" sx={{ mb: 1 }}>
-                                        <InputLabel sx={{ color: theme.fg, '&.Mui-focused': { color: theme.fg } }}>
+                                        <InputLabel sx={{ color: 'text.secondary', '&.Mui-focused': { color: 'primary.main' } }}>
                                             Font Family
                                         </InputLabel>
-
                                         <Select
                                             value={selectValue}
                                             label="Font Family"
                                             onChange={(e: SelectChangeEvent) => {
                                                 const v = e.target.value;
-
                                                 if (v === CUSTOM_FONT_VALUE) {
-                                                    // Switch to custom mode; keep current primary name
                                                     const primary = getPrimaryFontName(settings.lnFontFamily);
                                                     onUpdateSettings('lnFontFamily', buildFontFamilyFromCustomName(primary));
                                                 } else {
-                                                    // Preset selected
                                                     onUpdateSettings('lnFontFamily', v);
                                                 }
                                             }}
@@ -226,8 +283,7 @@ export const ReaderControls: React.FC<Props> = ({
                                         </Select>
                                     </FormControl>
 
-                                    {/* Show text field only in custom mode */}
-                                    {selectValue === CUSTOM_FONT_VALUE && (
+                                            {selectValue === CUSTOM_FONT_VALUE && (
                                         <TextField
                                             size="small"
                                             fullWidth
@@ -238,14 +294,14 @@ export const ReaderControls: React.FC<Props> = ({
                                             }}
                                             placeholder='Example: Ridibatang'
                                             helperText="Font must be installed on your device"
-                                            InputLabelProps={{ style: { color: theme.fg } }}
+                                            InputLabelProps={{ style: { color: muiTheme.palette.text.secondary } }}
                                             InputProps={{
                                                 endAdornment: customName ? (
                                                     <InputAdornment position="end">
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => onUpdateSettings('lnFontFamily', UNIVERSAL_FALLBACK_STACK)}
-                                                            sx={{ color: theme.fg }}
+                                                            sx={{ color: 'text.secondary' }}
                                                         >
                                                             <ClearIcon fontSize="small" />
                                                         </IconButton>
@@ -262,25 +318,44 @@ export const ReaderControls: React.FC<Props> = ({
 
                     {/* Font Size */}
                     <Box sx={{ mb: 2 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                             <Typography variant="caption" sx={{ opacity: 0.8 }}>Font Size</Typography>
-                            <Typography variant="caption" sx={{ fontWeight: 600 }}>{settings.lnFontSize}px</Typography>
+                            <TextField
+                                size="small"
+                                value={fontSizeInput}
+                                onChange={(e) => handleFontSizeChange(e.target.value)}
+                                onBlur={handleFontSizeBlur}
+                                type="number"
+                                inputProps={{ min: 12, max: 50, step: 1 }}
+                                sx={getInputStyles(muiTheme)}
+                                InputProps={{
+                                    endAdornment: <InputAdornment position="end" sx={{ color: 'text.secondary' }}>px</InputAdornment>
+                                }}
+                            />
                         </Box>
                         <Slider
                             value={settings.lnFontSize}
                             min={12}
-                            max={32}
+                            max={50}
                             step={1}
                             onChange={(_, v) => onUpdateSettings('lnFontSize', v)}
-                            sx={{ color: theme.fg }}
+                            sx={{ color: 'primary.main' }}
                         />
                     </Box>
 
                     {/* Line Height */}
                     <Box sx={{ mb: 2 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                             <Typography variant="caption" sx={{ opacity: 0.8 }}>Line Height</Typography>
-                            <Typography variant="caption" sx={{ fontWeight: 600 }}>{settings.lnLineHeight.toFixed(1)}</Typography>
+                            <TextField
+                                size="small"
+                                value={lineHeightInput}
+                                onChange={(e) => handleLineHeightChange(e.target.value)}
+                                onBlur={handleLineHeightBlur}
+                                type="number"
+                                inputProps={{ min: 1.2, max: 2.5, step: 0.1 }}
+                                sx={getInputStyles(muiTheme)}
+                            />
                         </Box>
                         <Slider
                             value={settings.lnLineHeight}
@@ -288,15 +363,26 @@ export const ReaderControls: React.FC<Props> = ({
                             max={2.5}
                             step={0.1}
                             onChange={(_, v) => onUpdateSettings('lnLineHeight', v)}
-                            sx={{ color: theme.fg }}
+                            sx={{ color: 'primary.main' }}
                         />
                     </Box>
 
                     {/* Letter Spacing */}
                     <Box sx={{ mb: 2 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                             <Typography variant="caption" sx={{ opacity: 0.8 }}>Letter Spacing</Typography>
-                            <Typography variant="caption" sx={{ fontWeight: 600 }}>{settings.lnLetterSpacing}px</Typography>
+                            <TextField
+                                size="small"
+                                value={letterSpacingInput}
+                                onChange={(e) => handleLetterSpacingChange(e.target.value)}
+                                onBlur={handleLetterSpacingBlur}
+                                type="number"
+                                inputProps={{ min: -2, max: 5, step: 0.5 }}
+                                sx={getInputStyles(muiTheme)}
+                                InputProps={{
+                                    endAdornment: <InputAdornment position="end" sx={{ color: 'text.secondary' }}>px</InputAdornment>
+                                }}
+                            />
                         </Box>
                         <Slider
                             value={settings.lnLetterSpacing}
@@ -304,7 +390,7 @@ export const ReaderControls: React.FC<Props> = ({
                             max={5}
                             step={0.5}
                             onChange={(_, v) => onUpdateSettings('lnLetterSpacing', v)}
-                            sx={{ color: theme.fg }}
+                            sx={{ color: 'primary.main' }}
                         />
                     </Box>
 
@@ -321,9 +407,9 @@ export const ReaderControls: React.FC<Props> = ({
                             fullWidth
                             sx={{
                                 '& .MuiToggleButton-root': {
-                                    color: theme.fg,
-                                    borderColor: `${theme.fg}44`,
-                                    '&.Mui-selected': { bgcolor: `${theme.fg}22`, color: theme.fg },
+                                    color: 'text.primary',
+                                    borderColor: 'divider',
+                                    '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' },
                                 },
                             }}
                         >
@@ -334,7 +420,7 @@ export const ReaderControls: React.FC<Props> = ({
                     </Box>
                 </Box>
 
-                <Divider sx={{ my: 3, borderColor: `${theme.fg}22` }} />
+                <Divider sx={{ my: 3, borderColor: 'divider' }} />
 
                 {/* Layout Section */}
                 <Box sx={{ mb: 3 }}>
@@ -344,7 +430,7 @@ export const ReaderControls: React.FC<Props> = ({
 
                     {/* Reading Direction */}
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                        <InputLabel sx={{ color: theme.fg, '&.Mui-focused': { color: theme.fg } }}>
+                        <InputLabel sx={{ color: 'text.secondary', '&.Mui-focused': { color: 'primary.main' } }}>
                             Text Direction
                         </InputLabel>
                         <Select
@@ -356,13 +442,12 @@ export const ReaderControls: React.FC<Props> = ({
                         >
                             <MenuItem value="horizontal">Horizontal (Left-to-Right)</MenuItem>
                             <MenuItem value="vertical-rtl">Vertical (Japanese RTL)</MenuItem>
-                            <MenuItem value="vertical-ltr">Vertical (Left-to-Right)</MenuItem>
                         </Select>
                     </FormControl>
 
                     {/* Pagination Mode */}
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                        <InputLabel sx={{ color: theme.fg, '&.Mui-focused': { color: theme.fg } }}>
+                        <InputLabel sx={{ color: 'text.secondary', '&.Mui-focused': { color: 'primary.main' } }}>
                             Pagination
                         </InputLabel>
                         <Select
@@ -379,9 +464,20 @@ export const ReaderControls: React.FC<Props> = ({
 
                     {/* Page Margin */}
                     <Box>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                             <Typography variant="caption" sx={{ opacity: 0.8 }}>Page Margin</Typography>
-                            <Typography variant="caption" sx={{ fontWeight: 600 }}>{settings.lnPageMargin}px</Typography>
+                            <TextField
+                                size="small"
+                                value={pageMarginInput}
+                                onChange={(e) => handlePageMarginChange(e.target.value)}
+                                onBlur={handlePageMarginBlur}
+                                type="number"
+                                inputProps={{ min: 0, max: 80, step: 4 }}
+                                sx={getInputStyles(muiTheme)}
+                                InputProps={{
+                                    endAdornment: <InputAdornment position="end" sx={{ color: 'text.secondary' }}>px</InputAdornment>
+                                }}
+                            />
                         </Box>
                         <Slider
                             value={settings.lnPageMargin}
@@ -389,27 +485,47 @@ export const ReaderControls: React.FC<Props> = ({
                             max={80}
                             step={4}
                             onChange={(_, v) => onUpdateSettings('lnPageMargin', v)}
-                            sx={{ color: theme.fg }}
+                            sx={{ color: 'primary.main' }}
                         />
                     </Box>
                 </Box>
 
-                <Divider sx={{ my: 3, borderColor: `${theme.fg}22` }} />
+                <Divider sx={{ my: 3, borderColor: 'divider' }} />
 
                 {/* Features Section */}
                 <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, opacity: 0.8 }}>
                         Features
                     </Typography>
-
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={!!settings.lnDisableAnimations}
+                                onChange={(e) => onUpdateSettings('lnDisableAnimations', e.target.checked)}
+                                sx={{
+                                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'primary.main' },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'primary.main' },
+                                }}
+                            />
+                        }
+                        label={
+                            <Box>
+                                <Typography variant="body2">Disable Animations</Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                                    Instant page turns
+                                </Typography>
+                            </Box>
+                        }
+                        sx={{ mb: 1.5, width: '100%' }}
+                    />
                     <FormControlLabel
                         control={
                             <Switch
                                 checked={settings.lnEnableFurigana}
                                 onChange={(e) => onUpdateSettings('lnEnableFurigana', e.target.checked)}
                                 sx={{
-                                    '& .MuiSwitch-switchBase.Mui-checked': { color: theme.fg },
-                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: theme.fg },
+                                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'primary.main' },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'primary.main' },
                                 }}
                             />
                         }
@@ -423,15 +539,29 @@ export const ReaderControls: React.FC<Props> = ({
                         }
                         sx={{ mb: 1.5, width: '100%' }}
                     />
-
+                    <Box sx={{ mb: 3 }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={settings.lnShowCharProgress ?? false}
+                                    onChange={(e) => onUpdateSettings('lnShowCharProgress', e.target.checked)}
+                                />
+                            }
+                            label="Show Character Progress"
+                            sx={{ color: theme.fg }}
+                        />
+                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.7, color: theme.fg }}>
+                            Display character count and percentage instead of page numbers
+                        </Typography>
+                    </Box>
                     <FormControlLabel
                         control={
                             <Switch
                                 checked={settings.enableYomitan}
                                 onChange={(e) => onUpdateSettings('enableYomitan', e.target.checked)}
                                 sx={{
-                                    '& .MuiSwitch-switchBase.Mui-checked': { color: theme.fg },
-                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: theme.fg },
+                                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'primary.main' },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'primary.main' },
                                 }}
                             />
                         }
@@ -449,14 +579,14 @@ export const ReaderControls: React.FC<Props> = ({
 
                 {onResetSettings && (
                     <>
-                        <Divider sx={{ my: 3, borderColor: `${theme.fg}22` }} />
+                        <Divider sx={{ my: 3, borderColor: 'divider' }} />
                         <Button
                             variant="outlined"
                             color="inherit"
                             fullWidth
                             startIcon={<RestartAltIcon />}
                             onClick={onResetSettings}
-                            sx={{ borderColor: `${theme.fg}44`, color: theme.fg }}
+                            sx={{ borderColor: 'divider', color: 'text.primary' }}
                         >
                             Reset Defaults
                         </Button>
@@ -466,4 +596,3 @@ export const ReaderControls: React.FC<Props> = ({
         </Drawer>
     );
 };
-

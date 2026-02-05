@@ -23,6 +23,10 @@ export const ContinuousReader: React.FC<ContinuousReaderProps> = ({
     showNavigation = false,
     onPositionUpdate,
     onRegisterSave,
+    onUpdateSettings,
+    chapterFilenames = [],
+
+
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -38,6 +42,7 @@ export const ContinuousReader: React.FC<ContinuousReaderProps> = ({
         navOptions,
         isReady,
         currentProgress,
+        currentPosition,
         reportScroll,
         reportChapterChange,
         handleContentClick,
@@ -176,6 +181,56 @@ export const ContinuousReader: React.FC<ContinuousReaderProps> = ({
         loadChaptersAround,
     ]);
 
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleEpubLink = (event: Event) => {
+            const customEvent = event as CustomEvent<{ href: string }>;
+            const href = customEvent.detail.href;
+
+            const [filename, anchor] = href.split('#');
+
+            let chapterIndex = chapterFilenames.indexOf(filename);
+
+            if (chapterIndex === -1) {
+                chapterIndex = chapterFilenames.findIndex(fn => {
+                    return fn.endsWith(filename) || fn.endsWith('/' + filename);
+                });
+            }
+
+            if (chapterIndex === -1) {
+                const targetBasename = filename.split('/').pop() || filename;
+                chapterIndex = chapterFilenames.findIndex(fn => {
+                    const storedBasename = fn.split('/').pop() || fn;
+                    return storedBasename === targetBasename;
+                });
+            }
+
+            if (chapterIndex !== -1) {
+                const chapterElement = container.querySelector(`[data-chapter="${chapterIndex}"]`);
+
+                if (chapterElement) {
+                    if (anchor) {
+                        const anchorElement = chapterElement.querySelector(`#${CSS.escape(anchor)}`);
+                        if (anchorElement) {
+                            anchorElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        } else {
+                            chapterElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    } else {
+                        chapterElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }
+            }
+        };
+
+        container.addEventListener('epub-link-clicked', handleEpubLink);
+
+        return () => {
+            container.removeEventListener('epub-link-clicked', handleEpubLink);
+        };
+    }, [chapterFilenames]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -206,15 +261,16 @@ export const ContinuousReader: React.FC<ContinuousReaderProps> = ({
             if (!container) return;
 
             const amount = 200;
+            const behavior = settings.lnDisableAnimations ? 'auto' : 'smooth';
 
             if (isVertical) {
                 const delta = forward ? (isRTL ? -amount : amount) : isRTL ? amount : -amount;
-                container.scrollBy({ left: delta, behavior: 'smooth' });
+                container.scrollBy({ left: delta, behavior });
             } else {
-                container.scrollBy({ top: forward ? amount : -amount, behavior: 'smooth' });
+                container.scrollBy({ top: forward ? amount : -amount, behavior });
             }
         },
-        [isVertical, isRTL]
+        [isVertical, isRTL, settings.lnDisableAnimations]
     );
 
     const containerStyles = buildContainerStyles(settings, isVertical, isRTL);
@@ -276,6 +332,10 @@ export const ContinuousReader: React.FC<ContinuousReaderProps> = ({
                 theme={theme}
                 isVertical={isVertical}
                 mode="continuous"
+                currentPosition={currentPosition}
+                bookStats={stats}
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
             />
         </div>
     );

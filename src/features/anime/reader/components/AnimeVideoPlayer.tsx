@@ -10,19 +10,27 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Slider from '@mui/material/Slider';
 import Menu from '@mui/material/Menu';
 import CircularProgress from '@mui/material/CircularProgress';
+import TextField from '@mui/material/TextField';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
-import ReplayIcon from '@mui/icons-material/Replay';
-import ForwardIcon from '@mui/icons-material/Forward';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
-import SkipPreviousIcon from '@mui/icons-material/SkipPrevious';
+import RotateLeftIcon from '@mui/icons-material/RotateLeft';
+import RotateRightIcon from '@mui/icons-material/RotateRight';
+import KeyboardArrowLeftIcon from '@mui/icons-material/KeyboardArrowLeft';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import KeyboardDoubleArrowLeftIcon from '@mui/icons-material/KeyboardDoubleArrowLeft';
+import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
 import VideoSettingsIcon from '@mui/icons-material/OndemandVideo';
 import SubtitlesIcon from '@mui/icons-material/Subtitles';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -33,22 +41,45 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useHotkeys as useHotkeysHook, useHotkeysContext } from 'react-hotkeys-hook';
 import Hls from 'hls.js';
 import { requestManager } from '@/lib/requests/RequestManager.ts';
 import { useLocalStorage } from '@/base/hooks/useStorage.tsx';
+import { Hotkey } from '@/features/reader/hotkeys/settings/components/Hotkey.tsx';
+import { HOTKEY_SCOPES } from '@/features/hotkeys/Hotkeys.constants.ts';
+import { HotkeyScope } from '@/features/hotkeys/Hotkeys.types.ts';
 import { useOCR } from '@/Manatan/context/OCRContext.tsx';
 import ManatanLogo from '@/Manatan/assets/manatan_logo.png';
 import { lookupYomitan } from '@/Manatan/utils/api.ts';
-import { DictionaryResult } from '@/Manatan/types.ts';
-import { StructuredContent } from '@/Manatan/components/YomitanPopup.tsx';
+import { buildSentenceFuriganaFromLookup } from '@/Manatan/utils/japaneseFurigana';
+import {
+    getWordAudioFilename,
+    getWordAudioSourceLabel,
+    getWordAudioSourceOptions,
+    playAudioFailClick,
+    playWordAudio,
+    resolveWordAudioUrl,
+} from '@/Manatan/utils/wordAudio';
+import { DictionaryResult, WordAudioSource, WordAudioSourceSelection } from '@/Manatan/types.ts';
+import { StructuredContent } from '@/Manatan/components/DictionaryView.tsx';
 import { makeToast } from '@/base/utils/Toast.ts';
 import { MediaQuery } from '@/base/utils/MediaQuery.tsx';
-import { addNote, findNotes, guiBrowse } from '@/Manatan/utils/anki.ts';
+import { addNote, findNotes, guiBrowse, updateLastCard } from '@/Manatan/utils/anki.ts';
+import {
+    AnimeHotkey,
+    ANIME_HOTKEYS,
+    ANIME_HOTKEY_DESCRIPTIONS,
+    ANIME_HOTKEY_LABELS,
+    DEFAULT_ANIME_HOTKEYS,
+} from '@/Manatan/hotkeys/AnimeHotkeys.ts';
 
 type SubtitleTrack = {
     url: string;
@@ -74,6 +105,13 @@ type SubtitleCue = {
     text: string;
 };
 
+type SwipeState = {
+    startX: number;
+    startY: number;
+    startTime: number;
+    moved: boolean;
+};
+
 type Props = {
     videoSrc: string;
     enableBraveAudioFix?: boolean;
@@ -88,6 +126,8 @@ type Props = {
     onVideoChange: (index: number) => void;
     subtitleTracks: SubtitleTrack[];
     subtitleTracksReady: boolean;
+    jimakuTitleOverride?: string | null;
+    onRequestJimakuTitleOverride?: () => void;
     onExit: () => void;
     title: string;
     animeId: string | number;
@@ -330,16 +370,25 @@ const parseSubtitles = (input: string, url: string): SubtitleCue[] => {
     return parseVttOrSrt(trimmed);
 };
 
+const splitTagString = (tag: string): string[] =>
+    tag
+        .split(/\s+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+const normalizeTagList = (tags: string[]): string[] =>
+    tags.flatMap((tag) => splitTagString(tag));
+
 const buildAnkiTags = (entry: DictionaryResult): string[] => {
     const allTags = new Set(['manatan']);
-    entry.definitions?.forEach((def) => def.tags?.forEach((tag) => allTags.add(tag)));
+    entry.glossary?.forEach((def) => normalizeTagList(def.tags ?? []).forEach((tag) => allTags.add(tag)));
     entry.termTags?.forEach((tag: any) => {
         if (typeof tag === 'string') {
-            allTags.add(tag);
+            splitTagString(tag).forEach((item) => allTags.add(item));
             return;
         }
         if (tag && typeof tag === 'object' && tag.name) {
-            allTags.add(tag.name);
+            splitTagString(tag.name).forEach((item) => allTags.add(item));
         }
     });
     return Array.from(allTags);
@@ -351,7 +400,10 @@ const generateAnkiFurigana = (entry: DictionaryResult): string => {
     }
     return entry.furigana
         .map((segment) => {
-            const kanji = segment[0];
+            if (!Array.isArray(segment)) {
+                return '';
+            }
+            const kanji = segment[0] ?? '';
             const kana = segment[1];
             if (kana && kana !== kanji) {
                 return `${kanji}[${kana}]`;
@@ -360,6 +412,7 @@ const generateAnkiFurigana = (entry: DictionaryResult): string => {
         })
         .join('');
 };
+
 
 const getLowestFrequency = (entry: DictionaryResult): string => {
     if (!entry.frequencies || entry.frequencies.length === 0) {
@@ -377,7 +430,18 @@ const getLowestFrequency = (entry: DictionaryResult): string => {
     return Math.min(...numbers).toString();
 };
 
-const buildDefinitionHtml = (entry: DictionaryResult): string => {
+const getTermTagLabel = (tag: unknown): string => {
+    if (typeof tag === 'string') {
+        return tag;
+    }
+    if (tag && typeof tag === 'object') {
+        const record = tag as { name?: string; label?: string; tag?: string; value?: string };
+        return record.name || record.label || record.tag || record.value || '';
+    }
+    return '';
+};
+
+const buildDefinitionHtml = (entry: DictionaryResult, dictionaryName?: string): string => {
     const styleToString = (style: Record<string, any>): string => {
         if (!style) {
             return '';
@@ -400,9 +464,17 @@ const buildDefinitionHtml = (entry: DictionaryResult): string => {
         if (node.type === 'structured-content') {
             return generateHTML(node.content);
         }
+        if (node?.data?.content === 'attribution') {
+            return '';
+        }
 
-        const { tag, content, style, href } = node;
+        const { tag, content, style, href, data } = node;
         const customStyle = styleToString(style);
+        const classNames = typeof data?.class === 'string' ? data.class.split(/\s+/) : [];
+        const isTagClass = classNames.includes('tag');
+        const tagClassStyle = isTagClass
+            ? 'display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px; color: #fff; background-color: #666; vertical-align: middle; line-height: 1.2;'
+            : '';
 
         if (tag === 'ul') {
             return `<ul style="padding-left: 20px; margin: 2px 0; list-style-type: disc;${customStyle}">${generateHTML(content)}</ul>`;
@@ -426,7 +498,7 @@ const buildDefinitionHtml = (entry: DictionaryResult): string => {
             return `<td style="border: 1px solid #777; padding: 2px 8px; text-align: center;${customStyle}">${generateHTML(content)}</td>`;
         }
         if (tag === 'span') {
-            return `<span style="${customStyle}">${generateHTML(content)}</span>`;
+            return `<span style="${tagClassStyle}${customStyle}">${generateHTML(content)}</span>`;
         }
         if (tag === 'div') {
             return `<div style="${customStyle}">${generateHTML(content)}</div>`;
@@ -438,15 +510,20 @@ const buildDefinitionHtml = (entry: DictionaryResult): string => {
         return generateHTML(content);
     };
 
-    return entry.definitions
+    const glossaryEntries = dictionaryName
+        ? entry.glossary.filter((def) => def.dictionaryName === dictionaryName)
+        : entry.glossary;
+    if (!glossaryEntries.length) {
+        return '';
+    }
+    return glossaryEntries
         .map((def, idx) => {
-            const tagsHTML = (def.tags ?? [])
-                .map(
-                    (tag) =>
-                        `<span style="display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px; color: #fff; background-color: #666; vertical-align: middle;">${tag}</span>`,
-                )
-                .join('');
+            const tagsHTML = normalizeTagList(def.tags ?? []).map(
+                (tag) =>
+                    `<span style="display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px; color: #fff; background-color: #666; vertical-align: middle;">${tag}</span>`,
+            );
             const dictHTML = `<span style="display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px; color: #fff; background-color: #9b59b6; vertical-align: middle;">${def.dictionaryName}</span>`;
+            const headerHTML = [...tagsHTML, dictHTML].join(' ');
             const contentHTML = def.content
                 .map((content) => {
                     try {
@@ -461,7 +538,7 @@ const buildDefinitionHtml = (entry: DictionaryResult): string => {
                 <div style="margin-bottom: 12px; display: flex;">
                     <div style="flex-shrink: 0; width: 24px; font-weight: bold;">${idx + 1}.</div>
                     <div style="flex-grow: 1;">
-                        <div style="margin-bottom: 4px;">${tagsHTML}${dictHTML}</div>
+                        <div style="margin-bottom: 4px;">${headerHTML}</div>
                         <div>${contentHTML}</div>
                     </div>
                 </div>
@@ -486,6 +563,8 @@ export const AnimeVideoPlayer = ({
     onVideoChange,
     subtitleTracks,
     subtitleTracksReady,
+    jimakuTitleOverride,
+    onRequestJimakuTitleOverride,
     onExit,
     title,
     animeId,
@@ -504,8 +583,21 @@ export const AnimeVideoPlayer = ({
     }, []);
     const isLandscape = useMediaQuery('(orientation: landscape)');
     const shouldShowFullscreen = showFullscreenButton ?? isDesktop;
+    const shouldShowVolume = isDesktopPlatform;
+    const infoButtonLabel = isDesktopPlatform ? 'Show keyboard shortcuts' : 'Show tap zone';
     const { wasPopupClosedRecently, settings, openSettings, showAlert } = useOCR();
+    const { enableScope, disableScope } = useHotkeysContext();
+    const animeHotkeys = useMemo(() => ({
+        ...DEFAULT_ANIME_HOTKEYS,
+        ...(settings.animeHotkeys ?? {}),
+    }), [settings.animeHotkeys]);
+    const hotkeyScopeOptions = useMemo(() => ({
+        preventDefault: true,
+        ...HOTKEY_SCOPES[HotkeyScope.ANIME],
+    }), []);
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const swipeStateRef = useRef<SwipeState | null>(null);
+    const swipeConsumedRef = useRef(false);
     const [isPaused, setIsPaused] = useState(true);
     const [isVideoLoading, setIsVideoLoading] = useState(true);
     const [isOverlayVisible, setIsOverlayVisible] = useState(true);
@@ -517,6 +609,9 @@ export const AnimeVideoPlayer = ({
     const [buffered, setBuffered] = useState(0);
     const [selectedSubtitleIndex, setSelectedSubtitleIndex] = useState<number | null>(null);
     const [playbackRate, setPlaybackRate] = useState(1);
+    const [volume, setVolume] = useLocalStorage<number>('anime-player-volume', 1);
+    const safeVolume = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 1;
+    const volumePercent = Math.round(safeVolume * 100);
     const [videoMenuAnchor, setVideoMenuAnchor] = useState<null | HTMLElement>(null);
     const [subtitleMenuAnchor, setSubtitleMenuAnchor] = useState<null | HTMLElement>(null);
     const [speedMenuAnchor, setSpeedMenuAnchor] = useState<null | HTMLElement>(null);
@@ -526,6 +621,8 @@ export const AnimeVideoPlayer = ({
         0,
     );
     const safeSubtitleOffsetMs = Number.isFinite(subtitleOffsetMs) ? subtitleOffsetMs : 0;
+    const [subtitleOffsetDialogOpen, setSubtitleOffsetDialogOpen] = useState(false);
+    const [subtitleOffsetInput, setSubtitleOffsetInput] = useState(`${safeSubtitleOffsetMs}`);
     const [highlightedSubtitle, setHighlightedSubtitle] = useState<{
         key: string;
         start: number;
@@ -543,6 +640,16 @@ export const AnimeVideoPlayer = ({
         `anime-${animeId}-playback-rate`,
         null,
     );
+    const episodeKey = useMemo(() => {
+        if (currentEpisodeIndex !== null && currentEpisodeIndex !== undefined) {
+            return `ep-${currentEpisodeIndex}`;
+        }
+        return 'single';
+    }, [currentEpisodeIndex]);
+    const [savedPlaybackPosition, setSavedPlaybackPosition] = useLocalStorage<number | null>(
+        `anime-${animeId}-${episodeKey}-playback-position`,
+        null,
+    );
     const [braveBufferSeconds, setBraveBufferSeconds] = useLocalStorage<number>(
         'anime-brave-buffer-seconds',
         20,
@@ -556,6 +663,12 @@ export const AnimeVideoPlayer = ({
     const [dictionaryLoading, setDictionaryLoading] = useState(false);
     const [dictionarySystemLoading, setDictionarySystemLoading] = useState(false);
     const [dictionaryQuery, setDictionaryQuery] = useState('');
+    const [wordAudioMenuAnchor, setWordAudioMenuAnchor] = useState<{ top: number; left: number } | null>(null);
+    const [wordAudioMenuEntry, setWordAudioMenuEntry] = useState<DictionaryResult | null>(null);
+    const [wordAudioSelection, setWordAudioSelection] = useState<WordAudioSourceSelection>('auto');
+    const [wordAudioSelectionKey, setWordAudioSelectionKey] = useState<string | null>(null);
+    const [wordAudioAvailability, setWordAudioAvailability] = useState<Record<WordAudioSource, boolean> | null>(null);
+    const [wordAudioAutoAvailable, setWordAudioAutoAvailable] = useState<boolean | null>(null);
     const [isCaptureMode, setIsCaptureMode] = useState(false);
     const [dictionaryContext, setDictionaryContext] = useState<{
         sentence: string;
@@ -564,6 +677,7 @@ export const AnimeVideoPlayer = ({
     } | null>(null);
     const [ankiActionPending, setAnkiActionPending] = useState<Record<string, boolean>>({});
     const [showTapZoneHint, setShowTapZoneHint] = useState(false);
+    const [showShortcutHint, setShowShortcutHint] = useState(false);
     const [isBrave, setIsBrave] = useState(false);
     const [isBraveLinux, setIsBraveLinux] = useState(false);
     const [showBraveProxyToggle, setShowBraveProxyToggle] = useState(false);
@@ -573,13 +687,30 @@ export const AnimeVideoPlayer = ({
         false,
     );
     const [localSubtitleTracks, setLocalSubtitleTracks] = useState<SubtitleTrack[]>([]);
-    const isAnyMenuOpen = Boolean(videoMenuAnchor || subtitleMenuAnchor || speedMenuAnchor || episodeMenuAnchor);
     const lastSubtitleWarningRef = useRef<string | null>(null);
     const lastPlaybackWarningRef = useRef<number | null>(null);
     const subtitleRequestRef = useRef(0);
+    const dictionaryRequestRef = useRef(0);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) {
+            return;
+        }
+        video.playsInline = true;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+    }, []);
     const menuInteractionRef = useRef(0);
     const resumePlaybackRef = useRef(false);
+    const resumePositionAppliedRef = useRef(false);
+    const lastSavedPositionRef = useRef<number | null>(null);
+    const lastSavedAtRef = useRef(0);
     const overlayVisibilityRef = useRef(false);
+    const dictionaryOpenedByHoverRef = useRef(false);
+    const autoPlayWordAudioKeyRef = useRef<string | null>(null);
+    const hoverLookupRef = useRef<{ cueKey: string; charOffset: number } | null>(null);
+    const hoverLookupTimerRef = useRef<number | null>(null);
     const braveMutedRef = useRef(false);
     const braveVolumeRef = useRef<number | null>(null);
     const braveResetPendingRef = useRef(false);
@@ -592,11 +723,27 @@ export const AnimeVideoPlayer = ({
         isBraveLinux &&
         enableBraveAudioFix &&
         (braveAudioFixMode === 'on' || (braveAudioFixMode === 'auto' && autoBraveFixDetected));
-    const braveSegmentDurationRef = useRef<number | null>(null);
     const [isPageFullscreen, setIsPageFullscreen] = useState(false);
+    const wrapperRef = useRef<HTMLDivElement | null>(null);
+    const isAnyMenuOpen = Boolean(
+        videoMenuAnchor || subtitleMenuAnchor || speedMenuAnchor || episodeMenuAnchor || wordAudioMenuAnchor,
+    );
+    const isFullscreenOverlay = isPageFullscreen || (fillHeight && isMobile);
+    const menuContainer = isFullscreenOverlay ? wrapperRef.current ?? undefined : undefined;
+    const wordAudioOptions = useMemo(
+        () => getWordAudioSourceOptions(settings.yomitanLanguage),
+        [settings.yomitanLanguage],
+    );
+    const activeWordAudioSelection = useMemo(() => {
+        if (!wordAudioMenuEntry) {
+            return 'auto' as WordAudioSourceSelection;
+        }
+        const entryKey = getDictionaryEntryKey(wordAudioMenuEntry);
+        return wordAudioSelectionKey === entryKey ? wordAudioSelection : 'auto';
+    }, [getDictionaryEntryKey, wordAudioMenuEntry, wordAudioSelection, wordAudioSelectionKey]);
+    const braveSegmentDurationRef = useRef<number | null>(null);
     const localSubtitleCuesRef = useRef<Map<string, SubtitleCue[]>>(new Map());
     const subtitleFileInputRef = useRef<HTMLInputElement | null>(null);
-    const subtitleOffsetTapRef = useRef(0);
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
     const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -619,33 +766,31 @@ export const AnimeVideoPlayer = ({
         setHighlightedSubtitle(null);
     }, []);
 
-    const promptSubtitleOffset = useCallback(() => {
+    const openSubtitleOffsetDialog = useCallback(() => {
         const currentValue = Number.isFinite(safeSubtitleOffsetMs) ? safeSubtitleOffsetMs : 0;
-        const input = window.prompt('Subtitle offset (ms)', `${currentValue}`);
-        if (input === null) {
-            return;
-        }
-        const nextValue = Number(input.trim());
+        setSubtitleOffsetInput(`${currentValue}`);
+        setSubtitleOffsetDialogOpen(true);
+    }, [safeSubtitleOffsetMs]);
+
+    const closeSubtitleOffsetDialog = useCallback(() => {
+        setSubtitleOffsetDialogOpen(false);
+    }, []);
+
+    const applySubtitleOffsetInput = useCallback(() => {
+        const nextValue = Number(subtitleOffsetInput.trim());
         if (!Number.isFinite(nextValue)) {
             makeToast('Enter a valid number of milliseconds.', 'warning');
             return;
         }
         setSubtitleOffsetMs(Math.round(nextValue));
-    }, [safeSubtitleOffsetMs, setSubtitleOffsetMs]);
+        setSubtitleOffsetDialogOpen(false);
+    }, [setSubtitleOffsetMs, subtitleOffsetInput]);
 
-    const handleSubtitleOffsetTap = useCallback(
-        (event: React.TouchEvent) => {
-            event.stopPropagation();
-            const now = Date.now();
-            if (now - subtitleOffsetTapRef.current < 300) {
-                subtitleOffsetTapRef.current = 0;
-                promptSubtitleOffset();
-                return;
-            }
-            subtitleOffsetTapRef.current = now;
-        },
-        [promptSubtitleOffset],
-    );
+    const resetSubtitleOffset = useCallback(() => {
+        setSubtitleOffsetMs(0);
+        setSubtitleOffsetInput('0');
+        setSubtitleOffsetDialogOpen(false);
+    }, [setSubtitleOffsetMs]);
 
     useEffect(() => {
         if (shouldRenderSubtitles) {
@@ -687,6 +832,63 @@ export const AnimeVideoPlayer = ({
             document.body.style.overflow = '';
         };
     }, [isPageFullscreen]);
+
+    const isNativeFullscreenActive = useCallback(() => {
+        if (typeof document === 'undefined') {
+            return false;
+        }
+        const wrapper = wrapperRef.current;
+        const fullscreenElement = document.fullscreenElement;
+        if (!wrapper || !fullscreenElement) {
+            return false;
+        }
+        return fullscreenElement === wrapper || wrapper.contains(fullscreenElement);
+    }, []);
+
+    const toggleFullscreen = useCallback(async () => {
+        const wrapper = wrapperRef.current;
+        if (typeof document === 'undefined') {
+            setIsPageFullscreen((prev) => !prev);
+            return;
+        }
+
+        if (isNativeFullscreenActive()) {
+            try {
+                await document.exitFullscreen();
+            } catch (err) {
+                setIsPageFullscreen(false);
+            }
+            return;
+        }
+
+        if (wrapper && wrapper.requestFullscreen) {
+            try {
+                await wrapper.requestFullscreen();
+                setIsPageFullscreen(true);
+            } catch (err) {
+                setIsPageFullscreen(true);
+            }
+            return;
+        }
+
+        setIsPageFullscreen((prev) => !prev);
+    }, [isNativeFullscreenActive]);
+
+    useEffect(() => {
+        if (typeof document === 'undefined') {
+            return;
+        }
+        const handleChange = () => {
+            if (!wrapperRef.current) {
+                return;
+            }
+            setIsPageFullscreen(isNativeFullscreenActive());
+        };
+        document.addEventListener('fullscreenchange', handleChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleChange);
+        };
+    }, [isNativeFullscreenActive]);
 
     useEffect(() => {
         if (!isMobile || !fillHeight) {
@@ -805,6 +1007,31 @@ export const AnimeVideoPlayer = ({
         }
         applyPlaybackRate(savedPlaybackRate);
     }, [savedPlaybackRate]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) {
+            return;
+        }
+        if (Math.abs(video.volume - safeVolume) > 0.01) {
+            video.volume = safeVolume;
+        }
+    }, [safeVolume, videoSrc]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) {
+            return () => {};
+        }
+        const onVolumeChange = () => {
+            const nextVolume = Math.min(Math.max(video.volume, 0), 1);
+            setVolume((prev) => (Math.abs(prev - nextVolume) < 0.01 ? prev : nextVolume));
+        };
+        video.addEventListener('volumechange', onVolumeChange);
+        return () => {
+            video.removeEventListener('volumechange', onVolumeChange);
+        };
+    }, [setVolume, videoSrc]);
 
     const markMenuInteraction = useCallback(() => {
         menuInteractionRef.current = Date.now();
@@ -1152,6 +1379,7 @@ export const AnimeVideoPlayer = ({
     ]);
 
     const tapZoneHintTimeoutRef = useRef<number | null>(null);
+    const shortcutHintTimeoutRef = useRef<number | null>(null);
     const showTapZoneHintFor = useCallback(
         (durationMs: number = 3000) => {
             if (!isMobile) {
@@ -1170,9 +1398,30 @@ export const AnimeVideoPlayer = ({
         [isMobile],
     );
 
+    const showShortcutHintFor = useCallback(
+        (durationMs: number = 6000) => {
+            if (!isDesktopPlatform) {
+                setShowShortcutHint(false);
+                return;
+            }
+            setShowShortcutHint(true);
+            if (shortcutHintTimeoutRef.current !== null) {
+                window.clearTimeout(shortcutHintTimeoutRef.current);
+            }
+            shortcutHintTimeoutRef.current = window.setTimeout(() => {
+                setShowShortcutHint(false);
+                shortcutHintTimeoutRef.current = null;
+            }, durationMs);
+        },
+        [isDesktopPlatform],
+    );
+
     useEffect(() => () => {
         if (tapZoneHintTimeoutRef.current !== null) {
             window.clearTimeout(tapZoneHintTimeoutRef.current);
+        }
+        if (shortcutHintTimeoutRef.current !== null) {
+            window.clearTimeout(shortcutHintTimeoutRef.current);
         }
     }, []);
 
@@ -1188,6 +1437,47 @@ export const AnimeVideoPlayer = ({
         setLocalSubtitleTracks([]);
         localSubtitleCuesRef.current.clear();
     }, [videoSrc]);
+
+    useEffect(() => {
+        resumePositionAppliedRef.current = false;
+        lastSavedPositionRef.current = null;
+        lastSavedAtRef.current = 0;
+    }, [episodeKey, animeId, videoSrc]);
+
+    const persistPlaybackPosition = useCallback((time: number, force = false) => {
+        if (!resumePositionAppliedRef.current) {
+            return;
+        }
+        if (!Number.isFinite(time) || time < 0) {
+            return;
+        }
+        if (time <= 0.5) {
+            if (force) {
+                setSavedPlaybackPosition(null);
+                lastSavedPositionRef.current = null;
+                lastSavedAtRef.current = 0;
+            }
+            return;
+        }
+        const video = videoRef.current;
+        const resolvedDuration = Number.isFinite(duration) && duration > 0
+            ? duration
+            : Number(video?.duration) || 0;
+        if (resolvedDuration > 0 && time >= resolvedDuration - 3) {
+            setSavedPlaybackPosition(null);
+            lastSavedPositionRef.current = null;
+            lastSavedAtRef.current = 0;
+            return;
+        }
+        const now = Date.now();
+        const lastTime = lastSavedPositionRef.current ?? 0;
+        if (!force && Math.abs(time - lastTime) < 5 && now - lastSavedAtRef.current < 4000) {
+            return;
+        }
+        lastSavedPositionRef.current = time;
+        lastSavedAtRef.current = now;
+        setSavedPlaybackPosition(Number(time.toFixed(3)));
+    }, [duration, setSavedPlaybackPosition]);
 
     useEffect(() => {
         const video = videoRef.current;
@@ -1240,6 +1530,81 @@ export const AnimeVideoPlayer = ({
             video.removeEventListener('progress', onProgress);
         };
     }, []);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) {
+            return;
+        }
+        if (resumePositionAppliedRef.current) {
+            return;
+        }
+        const storedPosition = Number(savedPlaybackPosition);
+        if (!Number.isFinite(storedPosition) || storedPosition <= 0.5) {
+            resumePositionAppliedRef.current = true;
+            return;
+        }
+
+        const applyPosition = () => {
+            if (resumePositionAppliedRef.current) {
+                return;
+            }
+            const resolvedDuration = Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration
+                : 0;
+            const maxPosition = resolvedDuration > 0 ? Math.max(0, resolvedDuration - 1) : storedPosition;
+            const targetPosition = Math.min(storedPosition, maxPosition);
+            if (targetPosition <= 0.5) {
+                resumePositionAppliedRef.current = true;
+                return;
+            }
+            if (Math.abs(video.currentTime - targetPosition) > 0.5) {
+                video.currentTime = targetPosition;
+            }
+            resumePositionAppliedRef.current = true;
+        };
+
+        if (video.readyState >= 1) {
+            applyPosition();
+            return;
+        }
+
+        const onReady = () => applyPosition();
+        video.addEventListener('loadedmetadata', onReady, { once: true });
+        video.addEventListener('loadeddata', onReady, { once: true });
+        return () => {
+            video.removeEventListener('loadedmetadata', onReady);
+            video.removeEventListener('loadeddata', onReady);
+        };
+    }, [episodeKey, savedPlaybackPosition, videoSrc]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) {
+            return () => {};
+        }
+
+        const handleTimeUpdate = () => persistPlaybackPosition(video.currentTime);
+        const handlePause = () => persistPlaybackPosition(video.currentTime, true);
+        const handleEnded = () => {
+            setSavedPlaybackPosition(null);
+            lastSavedPositionRef.current = null;
+            lastSavedAtRef.current = 0;
+        };
+        const handlePageHide = () => persistPlaybackPosition(video.currentTime, true);
+
+        video.addEventListener('timeupdate', handleTimeUpdate);
+        video.addEventListener('pause', handlePause);
+        video.addEventListener('ended', handleEnded);
+        window.addEventListener('pagehide', handlePageHide);
+
+        return () => {
+            video.removeEventListener('timeupdate', handleTimeUpdate);
+            video.removeEventListener('pause', handlePause);
+            video.removeEventListener('ended', handleEnded);
+            window.removeEventListener('pagehide', handlePageHide);
+        };
+    }, [persistPlaybackPosition, setSavedPlaybackPosition]);
 
     useEffect(() => {
         subtitleRequestRef.current += 1;
@@ -1358,6 +1723,21 @@ export const AnimeVideoPlayer = ({
         () => [...subtitleCues].sort((a, b) => a.start - b.start),
         [subtitleCues],
     );
+
+    const getCurrentSubtitleCue = useCallback(() => {
+        if (!sortedSubtitleCues.length) {
+            return null;
+        }
+        const offsetSeconds = safeSubtitleOffsetMs / 1000;
+        const baseTime = videoRef.current?.currentTime ?? currentTime;
+        const effectiveTime = baseTime + offsetSeconds;
+        const epsilon = SUBTITLE_TIME_EPSILON;
+        return (
+            sortedSubtitleCues.find(
+                (cue) => effectiveTime + epsilon >= cue.start && effectiveTime - epsilon <= cue.end,
+            ) ?? null
+        );
+    }, [sortedSubtitleCues, safeSubtitleOffsetMs, currentTime]);
 
     const getSubtitleSyncTarget = useCallback(
         (direction: 'previous' | 'next') => {
@@ -2144,6 +2524,7 @@ export const AnimeVideoPlayer = ({
         }
     }, [animeId, blobToBase64, currentEpisodeIndex, getAudioCaptureSource, isHlsSource, seekVideoTo, selectedVideoIndex]);
 
+
     const addNoteToAnki = useCallback(
         async (entry: DictionaryResult, overrideImage?: string) => {
             if (!settings.ankiDeck || !settings.ankiModel) {
@@ -2157,14 +2538,53 @@ export const AnimeVideoPlayer = ({
             const map = settings.ankiFieldMap || {};
             const fields: Record<string, string> = {};
             const sentence = dictionaryContext?.sentence || '';
+            const needsSentenceFurigana = Object.values(map).includes('Sentence Furigana');
+            const sentenceFurigana = needsSentenceFurigana
+                ? await buildSentenceFuriganaFromLookup(sentence, lookupYomitan, {
+                      language: settings.yomitanLanguage,
+                      groupingMode: settings.resultGroupingMode,
+                  })
+                : sentence;
+            const wordAudioField = Object.keys(map).find((key) => map[key] === 'Word Audio');
+            let wordAudioData:
+                | { url?: string; data?: string; filename: string; fields: string[] }
+                | undefined;
+            if (wordAudioField) {
+                const entryKey = getDictionaryEntryKey(entry);
+                const audioSelection = wordAudioSelectionKey === entryKey ? wordAudioSelection : 'auto';
+                const audioInfo = await resolveWordAudioUrl(
+                    entry,
+                    settings.yomitanLanguage,
+                    audioSelection,
+                );
+                if (audioInfo?.url) {
+                    wordAudioData = {
+                        url: audioInfo.url,
+                        filename: getWordAudioFilename(audioInfo.url),
+                        fields: [wordAudioField],
+                    };
+                }
+            }
 
             Object.entries(map).forEach(([ankiField, mapType]) => {
                 if (mapType === 'Target Word') fields[ankiField] = entry.headword;
                 else if (mapType === 'Reading') fields[ankiField] = entry.reading;
                 else if (mapType === 'Furigana') fields[ankiField] = generateAnkiFurigana(entry);
-                else if (mapType === 'Definition') fields[ankiField] = buildDefinitionHtml(entry);
+                else if (mapType === 'Definition' || mapType === 'Glossary') {
+                    fields[ankiField] = buildDefinitionHtml(entry);
+                }
                 else if (mapType === 'Frequency') fields[ankiField] = getLowestFrequency(entry);
                 else if (mapType === 'Sentence') fields[ankiField] = sentence;
+                else if (mapType === 'Sentence Furigana') {
+                    fields[ankiField] = sentenceFurigana;
+                }
+                else if (mapType === 'Word Audio') fields[ankiField] = '';
+                else if (typeof mapType === 'string') {
+                    const name = getSingleGlossaryName(mapType);
+                    if (name) {
+                        fields[ankiField] = buildDefinitionHtml(entry, name);
+                    }
+                }
             });
 
             const tags = buildAnkiTags(entry);
@@ -2186,9 +2606,10 @@ export const AnimeVideoPlayer = ({
                 }
             }
 
-            let audioData:
-                | { data?: string; filename: string; fields: string[] }
-                | undefined;
+            const audioPayloads: Array<{ url?: string; data?: string; filename: string; fields: string[] }> = [];
+            if (wordAudioData) {
+                audioPayloads.push(wordAudioData);
+            }
             if (audioField && dictionaryContext?.audioStart != null && dictionaryContext?.audioEnd != null) {
                 const audioBase64 = await captureSentenceAudio(dictionaryContext.audioStart, dictionaryContext.audioEnd);
                 if (audioBase64) {
@@ -2196,18 +2617,26 @@ export const AnimeVideoPlayer = ({
                     const isOgg = audioBase64.startsWith('data:audio/ogg');
                     const isWav = audioBase64.startsWith('data:audio/wav');
                     const extension = isMp4 ? 'm4a' : isOgg ? 'ogg' : isWav ? 'wav' : 'webm';
-                    audioData = {
+                    audioPayloads.push({
                         data: audioBase64.split(';base64,')[1],
                         filename: `manatan_sentence_${Date.now()}.${extension}`,
                         fields: [audioField],
-                    };
+                    });
                 } else {
                     makeToast('Could not capture sentence audio from the video.', 'warning');
                 }
             }
 
             try {
-                const noteId = await addNote(url, settings.ankiDeck, settings.ankiModel, fields, tags, pictureData, audioData);
+                const noteId = await addNote(
+                    url,
+                    settings.ankiDeck,
+                    settings.ankiModel,
+                    fields,
+                    tags,
+                    pictureData,
+                    audioPayloads.length ? audioPayloads : undefined,
+                );
                 makeToast('Anki card added.', { variant: 'success', autoHideDuration: 1500 });
                 return noteId;
             } catch (error: any) {
@@ -2220,11 +2649,16 @@ export const AnimeVideoPlayer = ({
             captureSentenceAudio,
             captureVideoFrame,
             dictionaryContext,
+            getDictionaryEntryKey,
             settings.ankiConnectUrl,
             settings.ankiDeck,
             settings.ankiFieldMap,
             settings.ankiModel,
+            settings.resultGroupingMode,
+            settings.yomitanLanguage,
             showAlert,
+            wordAudioSelection,
+            wordAudioSelectionKey,
         ],
     );
 
@@ -2283,6 +2717,91 @@ export const AnimeVideoPlayer = ({
         return 0;
     };
 
+    const performSubtitleLookup = useCallback(
+        async (
+            text: string,
+            cueKey: string,
+            cueStart: number,
+            cueEnd: number,
+            charOffset: number,
+            source: 'click' | 'hover',
+        ) => {
+            if (wasPopupClosedRecently()) {
+                return;
+            }
+
+            const safeCharOffset = Math.min(Math.max(charOffset, 0), text.length);
+            const fallbackHighlightRange = getSubtitleHighlightRange(text, safeCharOffset);
+            setHighlightedSubtitle(null);
+
+            const applyDictionaryHighlight = (matchLen?: number | null) => {
+                if (matchLen && matchLen > 0) {
+                    const end = Math.min(text.length, safeCharOffset + matchLen);
+                    setHighlightedSubtitle({ key: cueKey, start: safeCharOffset, end });
+                    return;
+                }
+                if (fallbackHighlightRange) {
+                    setHighlightedSubtitle({ key: cueKey, ...fallbackHighlightRange });
+                } else {
+                    setHighlightedSubtitle(null);
+                }
+            };
+
+            const encoder = new TextEncoder();
+            const byteIndex = encoder.encode(text.substring(0, safeCharOffset)).length;
+
+            const video = videoRef.current;
+            if (!dictionaryVisible) {
+                resumePlaybackRef.current = Boolean(video && !video.paused);
+                overlayVisibilityRef.current = isOverlayVisible;
+            }
+            video?.pause();
+
+            const offsetSeconds = safeSubtitleOffsetMs / 1000;
+            const audioStart = Math.max(0, cueStart - offsetSeconds);
+            const audioEnd = Math.max(audioStart, cueEnd - offsetSeconds);
+            setDictionaryContext({ sentence: text, audioStart, audioEnd });
+            setDictionaryVisible(true);
+            setDictionaryQuery(text);
+            setDictionaryResults([]);
+            setDictionaryLoading(true);
+            setDictionarySystemLoading(false);
+            setIsOverlayVisible(false);
+            dictionaryOpenedByHoverRef.current = source === 'hover';
+
+            const requestId = dictionaryRequestRef.current + 1;
+            dictionaryRequestRef.current = requestId;
+
+            const results = await lookupYomitan(
+                text,
+                byteIndex,
+                settings.resultGroupingMode,
+                settings.yomitanLanguage
+            );
+            if (dictionaryRequestRef.current !== requestId) {
+                return;
+            }
+            if (results === 'loading') {
+                setDictionaryLoading(false);
+                setDictionarySystemLoading(true);
+            } else {
+                setDictionaryResults(results || []);
+                setDictionaryLoading(false);
+                setDictionarySystemLoading(false);
+                const matchLen = results?.[0]?.matchLen;
+                applyDictionaryHighlight(matchLen);
+            }
+        },
+        [
+            dictionaryVisible,
+            isOverlayVisible,
+            safeSubtitleOffsetMs,
+            settings.resultGroupingMode,
+            settings.yomitanLanguage,
+            wasPopupClosedRecently,
+        ],
+    );
+
     const handleSubtitleClick = async (
         event: React.MouseEvent<HTMLDivElement>,
         text: string,
@@ -2291,66 +2810,77 @@ export const AnimeVideoPlayer = ({
         cueEnd: number,
     ) => {
         event.stopPropagation();
-        if (wasPopupClosedRecently()) {
-            return;
-        }
-
+        dictionaryOpenedByHoverRef.current = false;
         const element = event.currentTarget;
         const charOffset = getSubtitleCharOffset(element, event.clientX, event.clientY);
-
-        const safeCharOffset = Math.min(Math.max(charOffset, 0), text.length);
-        const fallbackHighlightRange = getSubtitleHighlightRange(text, safeCharOffset);
-        setHighlightedSubtitle(null);
-
-        const applyDictionaryHighlight = (matchLen?: number | null) => {
-            if (matchLen && matchLen > 0) {
-                const end = Math.min(text.length, safeCharOffset + matchLen);
-                setHighlightedSubtitle({ key: cueKey, start: safeCharOffset, end });
-                return;
-            }
-            if (fallbackHighlightRange) {
-                setHighlightedSubtitle({ key: cueKey, ...fallbackHighlightRange });
-            } else {
-                setHighlightedSubtitle(null);
-            }
-        };
-
-        const encoder = new TextEncoder();
-        const byteIndex = encoder.encode(text.substring(0, safeCharOffset)).length;
-
-        const video = videoRef.current;
-        if (!dictionaryVisible) {
-            resumePlaybackRef.current = Boolean(video && !video.paused);
-            overlayVisibilityRef.current = isOverlayVisible;
-        }
-        setIsPageFullscreen(false);
-        video?.pause();
-
-        const offsetSeconds = safeSubtitleOffsetMs / 1000;
-        const audioStart = Math.max(0, cueStart - offsetSeconds);
-        const audioEnd = Math.max(audioStart, cueEnd - offsetSeconds);
-        setDictionaryContext({ sentence: text, audioStart, audioEnd });
-        setDictionaryVisible(true);
-        setDictionaryQuery(text);
-        setDictionaryResults([]);
-        setDictionaryLoading(true);
-        setDictionarySystemLoading(false);
-        setIsOverlayVisible(false);
-
-        const results = await lookupYomitan(text, byteIndex, settings.resultGroupingMode);
-        if (results === 'loading') {
-            setDictionaryLoading(false);
-            setDictionarySystemLoading(true);
-        } else {
-            setDictionaryResults(results || []);
-            setDictionaryLoading(false);
-            setDictionarySystemLoading(false);
-            const matchLen = results?.[0]?.matchLen;
-            applyDictionaryHighlight(matchLen);
-        }
+        await performSubtitleLookup(text, cueKey, cueStart, cueEnd, charOffset, 'click');
     };
 
-    const togglePlay = () => {
+    const hoverLookupEnabled =
+        settings.animeSubtitleHoverLookup && settings.enableYomitan && !isMobile && isDesktopPlatform;
+
+    const handleSubtitleMouseMove = useCallback(
+        (event: React.MouseEvent<HTMLDivElement>, cue: SubtitleCue) => {
+            if (!hoverLookupEnabled) {
+                return;
+            }
+            if (dictionaryVisible && !dictionaryOpenedByHoverRef.current) {
+                return;
+            }
+            if (isAnyMenuOpen || wasPopupClosedRecently()) {
+                return;
+            }
+            const element = event.currentTarget;
+            const charOffset = getSubtitleCharOffset(element, event.clientX, event.clientY);
+            const safeCharOffset = Math.min(Math.max(charOffset, 0), cue.text.length);
+            const last = hoverLookupRef.current;
+            if (last && last.cueKey === cue.id && last.charOffset === safeCharOffset) {
+                return;
+            }
+            hoverLookupRef.current = { cueKey: cue.id, charOffset: safeCharOffset };
+            if (hoverLookupTimerRef.current !== null) {
+                window.clearTimeout(hoverLookupTimerRef.current);
+            }
+            hoverLookupTimerRef.current = window.setTimeout(() => {
+                hoverLookupTimerRef.current = null;
+                if (!hoverLookupEnabled) {
+                    return;
+                }
+                if (dictionaryVisible && !dictionaryOpenedByHoverRef.current) {
+                    return;
+                }
+                performSubtitleLookup(cue.text, cue.id, cue.start, cue.end, safeCharOffset, 'hover');
+            }, 120);
+        },
+        [
+            dictionaryVisible,
+            hoverLookupEnabled,
+            isAnyMenuOpen,
+            performSubtitleLookup,
+            wasPopupClosedRecently,
+        ],
+    );
+
+    const handleSubtitleMouseLeave = useCallback(() => {
+        if (hoverLookupTimerRef.current !== null) {
+            window.clearTimeout(hoverLookupTimerRef.current);
+            hoverLookupTimerRef.current = null;
+        }
+        hoverLookupRef.current = null;
+        if (hoverLookupEnabled && settings.animeSubtitleHoverAutoResume && dictionaryOpenedByHoverRef.current) {
+            resumeFromDictionary();
+        }
+    }, [hoverLookupEnabled, settings.animeSubtitleHoverAutoResume]);
+
+    useEffect(() => {
+        return () => {
+            if (hoverLookupTimerRef.current !== null) {
+                window.clearTimeout(hoverLookupTimerRef.current);
+            }
+        };
+    }, []);
+
+    const togglePlay = useCallback(() => {
         const video = videoRef.current;
         if (!video) return;
         if (video.paused) {
@@ -2364,7 +2894,8 @@ export const AnimeVideoPlayer = ({
             userPausedRef.current = true;
             video.pause();
         }
-    };
+    }, [setIsOverlayVisible]);
+
 
     const resumeFromDictionary = () => {
         const video = videoRef.current;
@@ -2372,6 +2903,9 @@ export const AnimeVideoPlayer = ({
         const previousOverlayVisible = overlayVisibilityRef.current;
         setDictionaryVisible(false);
         setDictionaryContext(null);
+        setHighlightedSubtitle(null);
+        closeWordAudioMenu();
+        dictionaryOpenedByHoverRef.current = false;
         if (!video || !shouldResume) {
             setIsOverlayVisible(previousOverlayVisible);
             return;
@@ -2386,6 +2920,54 @@ export const AnimeVideoPlayer = ({
     const ankiTargetField = useMemo(
         () => Object.keys(settings.ankiFieldMap || {}).find((key) => settings.ankiFieldMap?.[key] === 'Target Word'),
         [settings.ankiFieldMap],
+    );
+    const singleGlossaryPrefix = 'Single Glossary ';
+    const getSingleGlossaryName = useCallback((value: string): string | null => {
+        if (value.startsWith(singleGlossaryPrefix)) {
+            const name = value.slice(singleGlossaryPrefix.length).trim();
+            return name ? name : null;
+        }
+        if (value.startsWith('Single Glossary:')) {
+            const name = value.replace('Single Glossary:', '').trim();
+            return name ? name : null;
+        }
+        return null;
+    }, []);
+
+    const handlePlayWordAudio = useCallback(
+        async (
+            entry: DictionaryResult,
+            selection?: WordAudioSourceSelection,
+            playFailSound = true,
+        ) => {
+            const entryKey = getDictionaryEntryKey(entry);
+            const resolvedSelection = selection || (wordAudioSelectionKey === entryKey ? wordAudioSelection : 'auto');
+            const playedSource = await playWordAudio(entry, settings.yomitanLanguage, resolvedSelection);
+            if (!playedSource && playFailSound) {
+                playAudioFailClick();
+            }
+        },
+        [getDictionaryEntryKey, settings.yomitanLanguage, wordAudioSelection, wordAudioSelectionKey],
+    );
+
+    const openWordAudioMenu = useCallback((event: React.MouseEvent, entry: DictionaryResult) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setWordAudioMenuEntry(entry);
+        setWordAudioMenuAnchor({ top: event.clientY, left: event.clientX });
+    }, []);
+
+    const closeWordAudioMenu = useCallback(() => {
+        setWordAudioMenuAnchor(null);
+        setWordAudioMenuEntry(null);
+    }, []);
+
+    const handleSelectWordAudioSource = useCallback(
+        (selection: WordAudioSourceSelection, entry: DictionaryResult) => {
+            setWordAudioSelection(selection);
+            setWordAudioSelectionKey(getDictionaryEntryKey(entry));
+        },
+        [getDictionaryEntryKey],
     );
 
     const checkDuplicateForEntry = useCallback(
@@ -2437,18 +3019,100 @@ export const AnimeVideoPlayer = ({
         if (!settings.ankiConnectEnabled) {
             return;
         }
-        dictionaryResults.forEach((entry) => {
-            const entryKey = getDictionaryEntryKey(entry);
-            if (!settings.ankiCheckDuplicates) {
+        if (!settings.enableYomitan || !settings.ankiCheckDuplicates) {
+            dictionaryResults.forEach((entry) => {
+                const entryKey = getDictionaryEntryKey(entry);
                 setAnkiStatusByEntry((prev) => ({
                     ...prev,
                     [entryKey]: { status: 'missing', noteId: null },
                 }));
-                return;
-            }
+            });
+            return;
+        }
+        dictionaryResults.forEach((entry) => {
+            const entryKey = getDictionaryEntryKey(entry);
             checkDuplicateForEntry(entry);
         });
-    }, [dictionaryResults, dictionaryVisible, settings.ankiCheckDuplicates, settings.ankiConnectEnabled, checkDuplicateForEntry]);
+    }, [
+        dictionaryResults,
+        dictionaryVisible,
+        settings.ankiCheckDuplicates,
+        settings.ankiConnectEnabled,
+        settings.enableYomitan,
+        checkDuplicateForEntry,
+    ]);
+
+    useEffect(() => {
+        if (!dictionaryVisible) {
+            closeWordAudioMenu();
+            setWordAudioSelection('auto');
+            setWordAudioSelectionKey(null);
+        }
+    }, [closeWordAudioMenu, dictionaryVisible]);
+
+    useEffect(() => {
+        if (!wordAudioMenuAnchor) {
+            return;
+        }
+        const closeOnButtonClick = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target) {
+                return;
+            }
+            if (target.closest('[data-word-audio-menu="true"]')) {
+                return;
+            }
+            const button = target.closest('button,[role="button"]');
+            if (button) {
+                closeWordAudioMenu();
+            }
+        };
+        document.addEventListener('click', closeOnButtonClick, true);
+        return () => document.removeEventListener('click', closeOnButtonClick, true);
+    }, [closeWordAudioMenu, wordAudioMenuAnchor]);
+
+    useEffect(() => {
+        if (!wordAudioMenuEntry) {
+            setWordAudioAvailability(null);
+            setWordAudioAutoAvailable(null);
+            return;
+        }
+        let cancelled = false;
+        const entry = wordAudioMenuEntry;
+        const resolveAvailability = async () => {
+            const availability: Record<WordAudioSource, boolean> = {} as Record<WordAudioSource, boolean>;
+            for (const source of wordAudioOptions) {
+                const info = await resolveWordAudioUrl(entry, settings.yomitanLanguage, source);
+                availability[source] = Boolean(info?.url);
+            }
+            const autoAvailable =
+                wordAudioOptions.length > 0 && wordAudioOptions.some((source) => availability[source]);
+            if (!cancelled) {
+                setWordAudioAvailability(availability);
+                setWordAudioAutoAvailable(autoAvailable);
+            }
+        };
+        resolveAvailability();
+        return () => {
+            cancelled = true;
+        };
+    }, [settings.yomitanLanguage, wordAudioMenuEntry, wordAudioOptions]);
+
+    useEffect(() => {
+        if (!settings.autoPlayWordAudio) {
+            return;
+        }
+        if (!dictionaryVisible || !dictionaryResults.length) {
+            return;
+        }
+        const entry = dictionaryResults[0];
+        const key = getDictionaryEntryKey(entry);
+        if (autoPlayWordAudioKeyRef.current === key) {
+            return;
+        }
+        autoPlayWordAudioKeyRef.current = key;
+        handlePlayWordAudio(entry, undefined, false);
+    }, [dictionaryResults, dictionaryVisible, handlePlayWordAudio, settings.autoPlayWordAudio]);
 
     const handleAnkiOpen = useCallback(
         async (entry: DictionaryResult) => {
@@ -2554,12 +3218,85 @@ export const AnimeVideoPlayer = ({
         ],
     );
 
+    const handleAnkiReplaceLast = useCallback(
+        async (entry: DictionaryResult) => {
+            const entryKey = getDictionaryEntryKey(entry);
+            if (ankiActionPendingRef.current[entryKey]) {
+                return;
+            }
+            ankiActionPendingRef.current[entryKey] = true;
+            setAnkiActionPending((prev) => ({ ...prev, [entryKey]: true }));
+            try {
+                const rawSentence = dictionaryContext?.sentence || '';
+                if (!rawSentence) {
+                    showAlert('Sentence Missing', 'Select a subtitle to set the sentence context first.');
+                    return;
+                }
+                const map = settings.ankiFieldMap || {};
+                const sentenceField = Object.keys(map).find((key) => map[key] === 'Sentence') || '';
+                const imgField = Object.keys(map).find((key) => map[key] === 'Image') || '';
+                const audioField = Object.keys(map).find((key) => map[key] === 'Sentence Audio') || '';
+
+                if (!sentenceField && !imgField && !audioField) {
+                    showAlert('Anki Fields Missing', 'Set Sentence, Image, or Sentence Audio fields in settings.');
+                    return;
+                }
+
+                const url = settings.ankiConnectUrl || 'http://127.0.0.1:8765';
+                const imageBase64 = imgField ? await captureVideoFrame() : null;
+                const audioBase64 =
+                    audioField && dictionaryContext.audioStart != null && dictionaryContext.audioEnd != null
+                        ? await captureSentenceAudio(dictionaryContext.audioStart, dictionaryContext.audioEnd)
+                        : null;
+
+                if (imgField && !imageBase64) {
+                    makeToast('Could not capture a video frame for the Anki image.', 'warning');
+                }
+                if (audioField && !audioBase64) {
+                    makeToast('Could not capture sentence audio from the video.', 'warning');
+                }
+
+                await updateLastCard(
+                    url,
+                    undefined,
+                    rawSentence,
+                    imgField,
+                    sentenceField,
+                    settings.ankiImageQuality || 0.92,
+                    imageBase64 || undefined,
+                    audioField,
+                    audioBase64 || undefined,
+                );
+                makeToast('Anki card updated.', { variant: 'success', autoHideDuration: 1500 });
+            } catch (error: any) {
+                console.error('[AnimeVideoPlayer] Failed to update last card', error);
+                makeToast('Failed to update Anki card', 'error', error?.message ?? String(error));
+            } finally {
+                setAnkiActionPending((prev) => ({ ...prev, [entryKey]: false }));
+                ankiActionPendingRef.current[entryKey] = false;
+            }
+        },
+        [
+            captureSentenceAudio,
+            captureVideoFrame,
+            dictionaryContext,
+            setAnkiActionPending,
+            settings.ankiConnectUrl,
+            settings.ankiFieldMap,
+            settings.ankiImageQuality,
+            showAlert,
+        ],
+    );
+
     const getAnkiEntryStatus = useCallback(
         (entry: DictionaryResult) => {
+            if (!settings.enableYomitan) {
+                return 'missing';
+            }
             const entryKey = getDictionaryEntryKey(entry);
             return ankiStatusByEntry[entryKey]?.status ?? (settings.ankiCheckDuplicates ? 'unknown' : 'missing');
         },
-        [ankiStatusByEntry, settings.ankiCheckDuplicates],
+        [ankiStatusByEntry, settings.ankiCheckDuplicates, settings.enableYomitan],
     );
 
     const handleOverlayToggle = () => {
@@ -2595,6 +3332,20 @@ export const AnimeVideoPlayer = ({
         const nextTime = (value / 100) * duration;
         video.currentTime = nextTime;
         setCurrentTime(nextTime);
+    };
+
+    const handleVolumeChange = (event: Event, value: number | number[]) => {
+        event.stopPropagation();
+        const nextValue = Array.isArray(value) ? value[0] : value;
+        if (typeof nextValue !== 'number') {
+            return;
+        }
+        const nextVolume = Math.min(Math.max(nextValue / 100, 0), 1);
+        setVolume(nextVolume);
+        const video = videoRef.current;
+        if (video) {
+            video.volume = nextVolume;
+        }
     };
 
     const formatTime = (value: number) => {
@@ -2654,28 +3405,69 @@ export const AnimeVideoPlayer = ({
         ],
     );
 
-    const subtitleMenuItems = useMemo(
-        () =>
-            subtitleOptions.map((option) => {
-                const isSelected = option.index === selectedSubtitleIndex;
-                return (
-                    <MenuItem
-                        key={option.index}
-                        selected={isSelected}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            markMenuInteraction();
-                            handleSubtitleChange(option.index);
-                            setSubtitleMenuAnchor(null);
+    const subtitleMenuItems = useMemo(() => {
+        const items = subtitleOptions.map((option) => {
+            const isSelected = option.index === selectedSubtitleIndex;
+            return (
+                <MenuItem
+                    key={option.index}
+                    selected={isSelected}
+                    className="subtitle-menu-item"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        markMenuInteraction();
+                        handleSubtitleChange(option.index);
+                        setSubtitleMenuAnchor(null);
+                    }}
+                >
+                    <ListItemIcon sx={{ minWidth: 32 }}>{renderSelectionIcon(isSelected)}</ListItemIcon>
+                    <ListItemText
+                        primary={option.label}
+                        primaryTypographyProps={{
+                            sx: {
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                            },
                         }}
-                    >
-                        <ListItemIcon sx={{ minWidth: 32 }}>{renderSelectionIcon(isSelected)}</ListItemIcon>
-                        <ListItemText primary={option.label} />
-                    </MenuItem>
-                );
-            }),
-        [handleSubtitleChange, markMenuInteraction, renderSelectionIcon, selectedSubtitleIndex, subtitleOptions],
-    );
+                    />
+                </MenuItem>
+            );
+        });
+
+        const jimakuApiKey = settings.jimakuApiKey?.trim();
+        if (jimakuApiKey && onRequestJimakuTitleOverride) {
+            const secondaryText = jimakuTitleOverride?.trim()
+                ? `Current: ${jimakuTitleOverride.trim()}`
+                : 'Use current anime title';
+            items.push(
+                <MenuItem
+                    key="jimaku-title-override"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        markMenuInteraction();
+                        onRequestJimakuTitleOverride();
+                        setSubtitleMenuAnchor(null);
+                    }}
+                >
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                        <TextFieldsIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Jimaku title" secondary={secondaryText} />
+                </MenuItem>,
+            );
+        }
+
+        return items;
+    }, [
+        handleSubtitleChange,
+        jimakuTitleOverride,
+        markMenuInteraction,
+        onRequestJimakuTitleOverride,
+        renderSelectionIcon,
+        selectedSubtitleIndex,
+        settings.jimakuApiKey,
+        subtitleOptions,
+    ]);
 
     const handlePlaybackChange = (rate: number) => {
         applyPlaybackRate(rate);
@@ -2741,18 +3533,19 @@ export const AnimeVideoPlayer = ({
         setCurrentTime(safeTime);
     };
 
-    const skipToPreviousSubtitle = () => {
-        if (!activeCues.length) {
-            seekBy(-10);
-            return;
-        }
+    const repeatCurrentSubtitle = useCallback(() => {
         if (!sortedSubtitleCues.length) {
-            seekBy(-10);
             return;
         }
         const offsetSeconds = safeSubtitleOffsetMs / 1000;
-        const effectiveTime = currentTime + offsetSeconds;
+        const baseTime = videoRef.current?.currentTime ?? currentTime;
+        const effectiveTime = baseTime + offsetSeconds;
         const epsilon = SUBTITLE_TIME_EPSILON;
+        const currentCue = getCurrentSubtitleCue();
+        if (currentCue) {
+            seekToTime(currentCue.start - offsetSeconds);
+            return;
+        }
         for (let i = sortedSubtitleCues.length - 1; i >= 0; i -= 1) {
             const cue = sortedSubtitleCues[i];
             if (cue.start < effectiveTime - epsilon) {
@@ -2761,20 +3554,54 @@ export const AnimeVideoPlayer = ({
             }
         }
         seekToTime(sortedSubtitleCues[0].start - offsetSeconds);
-    };
+    }, [sortedSubtitleCues, safeSubtitleOffsetMs, currentTime, getCurrentSubtitleCue, seekToTime]);
 
-    const skipToNextSubtitle = () => {
-        if (!activeCues.length) {
-            seekBy(10);
+    const skipToPreviousSubtitle = useCallback(() => {
+        if (!sortedSubtitleCues.length) {
+            seekBy(-10);
             return;
         }
+        const offsetSeconds = safeSubtitleOffsetMs / 1000;
+        const baseTime = videoRef.current?.currentTime ?? currentTime;
+        const effectiveTime = baseTime + offsetSeconds;
+        const epsilon = SUBTITLE_TIME_EPSILON;
+        const currentCue = getCurrentSubtitleCue();
+        if (currentCue) {
+            const currentIndex = sortedSubtitleCues.findIndex((cue) => cue.id === currentCue.id);
+            if (currentIndex > 0) {
+                seekToTime(sortedSubtitleCues[currentIndex - 1].start - offsetSeconds);
+                return;
+            }
+            seekToTime(sortedSubtitleCues[0].start - offsetSeconds);
+            return;
+        }
+        for (let i = sortedSubtitleCues.length - 1; i >= 0; i -= 1) {
+            const cue = sortedSubtitleCues[i];
+            if (cue.start < effectiveTime - epsilon) {
+                seekToTime(cue.start - offsetSeconds);
+                return;
+            }
+        }
+        seekToTime(sortedSubtitleCues[0].start - offsetSeconds);
+    }, [sortedSubtitleCues, safeSubtitleOffsetMs, currentTime, getCurrentSubtitleCue, seekBy, seekToTime]);
+
+    const skipToNextSubtitle = useCallback(() => {
         if (!sortedSubtitleCues.length) {
             seekBy(10);
             return;
         }
         const offsetSeconds = safeSubtitleOffsetMs / 1000;
-        const effectiveTime = currentTime + offsetSeconds;
+        const baseTime = videoRef.current?.currentTime ?? currentTime;
+        const effectiveTime = baseTime + offsetSeconds;
         const epsilon = SUBTITLE_TIME_EPSILON;
+        const currentCue = getCurrentSubtitleCue();
+        if (currentCue) {
+            const currentIndex = sortedSubtitleCues.findIndex((cue) => cue.id === currentCue.id);
+            if (currentIndex >= 0 && currentIndex < sortedSubtitleCues.length - 1) {
+                seekToTime(sortedSubtitleCues[currentIndex + 1].start - offsetSeconds);
+                return;
+            }
+        }
         for (let i = 0; i < sortedSubtitleCues.length; i += 1) {
             const cue = sortedSubtitleCues[i];
             if (cue.start > effectiveTime + epsilon) {
@@ -2784,7 +3611,151 @@ export const AnimeVideoPlayer = ({
         }
         const lastCue = sortedSubtitleCues[sortedSubtitleCues.length - 1];
         seekToTime(lastCue.start - offsetSeconds);
-    };
+    }, [sortedSubtitleCues, safeSubtitleOffsetMs, currentTime, getCurrentSubtitleCue, seekBy, seekToTime]);
+
+    const handleSwipeStart = useCallback(
+        (event: React.TouchEvent<HTMLDivElement>) => {
+            if (event.touches.length !== 1 || isAnyMenuOpen || dictionaryVisible) {
+                swipeStateRef.current = null;
+                return;
+            }
+            const touch = event.touches[0];
+            swipeStateRef.current = {
+                startX: touch.clientX,
+                startY: touch.clientY,
+                startTime: Date.now(),
+                moved: false,
+            };
+            swipeConsumedRef.current = false;
+        },
+        [dictionaryVisible, isAnyMenuOpen],
+    );
+
+    const handleSwipeMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+        const state = swipeStateRef.current;
+        if (!state || event.touches.length !== 1) {
+            return;
+        }
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - state.startX;
+        const deltaY = touch.clientY - state.startY;
+        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+            state.moved = true;
+        }
+    }, []);
+
+    const handleSwipeEnd = useCallback(
+        (event: React.TouchEvent<HTMLDivElement>) => {
+            const state = swipeStateRef.current;
+            swipeStateRef.current = null;
+            if (!state || !state.moved || isAnyMenuOpen || dictionaryVisible) {
+                return;
+            }
+            const touch = event.changedTouches[0];
+            if (!touch) {
+                return;
+            }
+            const deltaX = touch.clientX - state.startX;
+            const deltaY = touch.clientY - state.startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+            const elapsed = Date.now() - state.startTime;
+            if (elapsed > 800 || absX < 60 || absX < absY * 1.2) {
+                return;
+            }
+            swipeConsumedRef.current = true;
+            if (deltaX < 0) {
+                skipToPreviousSubtitle();
+            } else {
+                skipToNextSubtitle();
+            }
+        },
+        [dictionaryVisible, isAnyMenuOpen, skipToNextSubtitle, skipToPreviousSubtitle],
+    );
+
+    const toggleSubtitles = useCallback(() => {
+        setIsSubtitleDisabled((prev) => !prev);
+    }, [setIsSubtitleDisabled]);
+
+    const nudgeSubtitleOffset = useCallback((delta: number) => {
+        setSubtitleOffsetMs((prev) => (Number.isFinite(prev) ? prev : 0) + delta);
+    }, [setSubtitleOffsetMs]);
+
+    const alignSubtitleOffset = useCallback((direction: 'previous' | 'next') => {
+        const cue = getSubtitleSyncTarget(direction);
+        syncSubtitleOffsetToCue(cue);
+    }, [getSubtitleSyncTarget, syncSubtitleOffsetToCue]);
+
+    useEffect(() => {
+        if (!isDesktopPlatform) {
+            return;
+        }
+        enableScope(HotkeyScope.ANIME);
+        return () => disableScope(HotkeyScope.ANIME);
+    }, [disableScope, enableScope, isDesktopPlatform]);
+
+    const getHotkeyOptions = useCallback(
+        (keys: string[]) => ({
+            ...hotkeyScopeOptions,
+            enabled: isDesktopPlatform && keys.length > 0,
+        }),
+        [hotkeyScopeOptions, isDesktopPlatform],
+    );
+
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.TOGGLE_PLAY],
+        () => togglePlay(),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.TOGGLE_PLAY]),
+        [togglePlay],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.PREVIOUS_SUBTITLE],
+        () => skipToPreviousSubtitle(),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.PREVIOUS_SUBTITLE]),
+        [skipToPreviousSubtitle],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.NEXT_SUBTITLE],
+        () => skipToNextSubtitle(),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.NEXT_SUBTITLE]),
+        [skipToNextSubtitle],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.REPEAT_SUBTITLE],
+        () => repeatCurrentSubtitle(),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.REPEAT_SUBTITLE]),
+        [repeatCurrentSubtitle],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.TOGGLE_SUBTITLES],
+        () => toggleSubtitles(),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.TOGGLE_SUBTITLES]),
+        [toggleSubtitles],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.ALIGN_PREVIOUS_SUBTITLE],
+        () => alignSubtitleOffset('previous'),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.ALIGN_PREVIOUS_SUBTITLE]),
+        [alignSubtitleOffset],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.ALIGN_NEXT_SUBTITLE],
+        () => alignSubtitleOffset('next'),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.ALIGN_NEXT_SUBTITLE]),
+        [alignSubtitleOffset],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.OFFSET_SUBTITLE_BACK_100],
+        () => nudgeSubtitleOffset(-100),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.OFFSET_SUBTITLE_BACK_100]),
+        [nudgeSubtitleOffset],
+    );
+    useHotkeysHook(
+        animeHotkeys[AnimeHotkey.OFFSET_SUBTITLE_FORWARD_100],
+        () => nudgeSubtitleOffset(100),
+        getHotkeyOptions(animeHotkeys[AnimeHotkey.OFFSET_SUBTITLE_FORWARD_100]),
+        [nudgeSubtitleOffset],
+    );
 
     const episodeMenuItems = useMemo(
         () =>
@@ -2865,8 +3836,20 @@ export const AnimeVideoPlayer = ({
         [highlightedSubtitle],
     );
 
+    const renderShortcutKeys = useCallback((keys: string[]) => {
+        if (!keys.length) {
+            return (
+                <Typography variant="body2" sx={{ opacity: 0.6 }}>
+                    Unassigned
+                </Typography>
+            );
+        }
+        return <Hotkey keys={keys} />;
+    }, []);
+
     return (
         <Box
+            ref={wrapperRef}
             sx={{
                 position: wrapperFixed ? 'fixed' : 'relative',
                 inset: wrapperFixed ? 0 : 'auto',
@@ -2885,6 +3868,10 @@ export const AnimeVideoPlayer = ({
                 boxSizing: 'border-box',
             }}
             onClick={() => {
+                if (swipeConsumedRef.current) {
+                    swipeConsumedRef.current = false;
+                    return;
+                }
                 if (dictionaryVisible) {
                     resumeFromDictionary();
                     return;
@@ -2894,6 +3881,9 @@ export const AnimeVideoPlayer = ({
                 }
                 handleOverlayToggle();
             }}
+            onTouchStart={handleSwipeStart}
+            onTouchMove={handleSwipeMove}
+            onTouchEnd={handleSwipeEnd}
         >
             <Box
                 sx={{
@@ -2979,6 +3969,49 @@ export const AnimeVideoPlayer = ({
                     </Typography>
                 </Box>
             )}
+            {showShortcutHint && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: 16,
+                        left: 16,
+                        zIndex: 4,
+                        pointerEvents: 'none',
+                        color: '#fff',
+                        backgroundColor: 'rgba(0,0,0,0.55)',
+                        borderRadius: 2,
+                        px: 2,
+                        py: 1.5,
+                        minWidth: 260,
+                        maxWidth: 380,
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: 0.8, opacity: 0.7 }}>
+                        Shortcuts
+                    </Typography>
+                    <Stack spacing={0.75} sx={{ mt: 1 }}>
+                        {ANIME_HOTKEYS.map((hotkey) => (
+                            <Stack
+                                key={hotkey}
+                                direction="row"
+                                spacing={2}
+                                alignItems="center"
+                                sx={{ justifyContent: 'space-between' }}
+                            >
+                                {renderShortcutKeys(animeHotkeys[hotkey] ?? [])}
+                                <Typography
+                                    variant="body2"
+                                    sx={{ opacity: 0.7, textAlign: 'right' }}
+                                    title={ANIME_HOTKEY_DESCRIPTIONS[hotkey]}
+                                >
+                                    {ANIME_HOTKEY_LABELS[hotkey]}
+                                </Typography>
+                            </Stack>
+                        ))}
+                    </Stack>
+                </Box>
+            )}
             {statusMessage && (
                 <Box
                     sx={{
@@ -3030,7 +4063,9 @@ export const AnimeVideoPlayer = ({
                                 maxWidth: '100%',
                                 WebkitTapHighlightColor: 'transparent',
                             }}
-                onClick={(event) => handleSubtitleClick(event, cue.text, cue.id, cue.start, cue.end)}
+                            onClick={(event) => handleSubtitleClick(event, cue.text, cue.id, cue.start, cue.end)}
+                            onMouseMove={(event) => handleSubtitleMouseMove(event, cue)}
+                            onMouseLeave={() => handleSubtitleMouseLeave()}
                         >
                             <Typography
                                 variant="body1"
@@ -3061,7 +4096,10 @@ export const AnimeVideoPlayer = ({
                             overflowY: 'auto',
                             zIndex: 4,
                         }}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            closeWordAudioMenu();
+                        }}
                     >
                         <Stack spacing={1}>
                             {dictionaryLoading && (
@@ -3093,101 +4131,206 @@ export const AnimeVideoPlayer = ({
                                                     {entry.reading}
                                                 </Typography>
                                             )}
-                                            {entry.termTags?.map((tag, tagIndex) => (
+                                            {entry.termTags
+                                                ?.flatMap((tag) => splitTagString(getTermTagLabel(tag)))
+                                                .map((label, tagIndex) => (
+                                                    <Box
+                                                        key={`${entry.headword}-tag-${tagIndex}`}
+                                                        sx={{
+                                                            px: 0.5,
+                                                            py: 0.1,
+                                                            borderRadius: 0.5,
+                                                            fontSize: '0.7rem',
+                                                            backgroundColor: '#666',
+                                                        }}
+                                                    >
+                                                        {label}
+                                                    </Box>
+                                                ))}
+                                        </Box>
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                            {settings.ankiConnectEnabled && (
+                                                <>
+                                                    {(!settings.ankiDeck || !settings.ankiModel) ? (
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                showAlert(
+                                                                    'Anki Settings Missing',
+                                                                    'Select a target Deck and Card Type in settings.',
+                                                                );
+                                                            }}
+                                                            title="Anki settings missing"
+                                                            sx={{ color: '#d04a4a' }}
+                                                            aria-label="Anki settings missing"
+                                                        >
+                                                            <CloseIcon fontSize="small" />
+                                                        </IconButton>
+                                                    ) : (
+                                                        settings.enableYomitan
+                                                            ? (() => {
+                                                                const entryKey = getDictionaryEntryKey(entry);
+                                                                if (ankiActionPending[entryKey]) {
+                                                                    return (
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            disabled
+                                                                            title="Adding card..."
+                                                                            sx={{ color: '#888' }}
+                                                                            aria-label="Adding card"
+                                                                        >
+                                                                            <HourglassEmptyIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    );
+                                                                }
+                                                                const status = getAnkiEntryStatus(entry);
+                                                                if (status === 'exists') {
+                                                                    return (
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                handleAnkiOpen(entry);
+                                                                            }}
+                                                                            title="Open in Anki"
+                                                                            sx={{ color: '#2ecc71' }}
+                                                                            aria-label="Open in Anki"
+                                                                        >
+                                                                            <MenuBookIcon sx={{ fontSize: 22, transform: 'translateY(-0.5px)' }} />
+                                                                        </IconButton>
+                                                                    );
+                                                                }
+                                                                if (status === 'missing') {
+                                                                    return (
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                handleAnkiAdd(entry);
+                                                                            }}
+                                                                            title="Add to Anki"
+                                                                            sx={{ color: '#2ecc71' }}
+                                                                            aria-label="Add to Anki"
+                                                                        >
+                                                                            <AddCircleOutlineIcon
+                                                                                sx={{
+                                                                                    fontSize: 22,
+                                                                                    '& path': {
+                                                                                        transform: 'scale(0.9167)',
+                                                                                        transformOrigin: 'center',
+                                                                                        transformBox: 'fill-box',
+                                                                                    },
+                                                                                }}
+                                                                            />
+                                                                        </IconButton>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        disabled
+                                                                        title="Checking duplicates"
+                                                                        sx={{ color: '#888' }}
+                                                                        aria-label="Checking duplicates"
+                                                                    >
+                                                                        <HourglassEmptyIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                );
+                                                            })()
+                                                            : (() => {
+                                                                const entryKey = getDictionaryEntryKey(entry);
+                                                                const isPending = ankiActionPending[entryKey];
+                                                                return (
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            if (isPending) {
+                                                                                return;
+                                                                            }
+                                                                            handleAnkiReplaceLast(entry);
+                                                                        }}
+                                                                        title={isPending ? 'Updating card...' : 'Update last card'}
+                                                                        sx={{ color: isPending ? '#888' : '#4fb0ff' }}
+                                                                        disabled={isPending}
+                                                                        aria-label={isPending ? 'Updating card' : 'Update last card'}
+                                                                    >
+                                                                        <NoteAddIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                );
+                                                            })()
+                                                    )}
+                                                </>
+                                            )}
+                                            <IconButton
+                                                size="small"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    handlePlayWordAudio(entry);
+                                                }}
+                                                onContextMenu={(event) => openWordAudioMenu(event, entry)}
+                                                title="Play word audio (right-click for sources)"
+                                                aria-label="Play word audio"
+                                                disabled={!wordAudioOptions.length}
+                                                sx={{
+                                                    color: wordAudioOptions.length ? '#7cc8ff' : '#555',
+                                                }}
+                                            >
+                                                <VolumeUpIcon sx={{ fontSize: 22 }} />
+                                            </IconButton>
+                                        </Stack>
+                                    </Stack>
+                                    {entry.frequencies && entry.frequencies.length > 0 && (
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: 0.75,
+                                                mb: 1,
+                                            }}
+                                        >
+                                            {entry.frequencies.map((freq, freqIndex) => (
                                                 <Box
-                                                    key={`${entry.headword}-tag-${tagIndex}`}
+                                                    key={`${entry.headword}-freq-${freqIndex}`}
                                                     sx={{
-                                                        px: 0.5,
-                                                        py: 0.1,
-                                                        borderRadius: 0.5,
+                                                        display: 'inline-flex',
                                                         fontSize: '0.7rem',
-                                                        backgroundColor: '#666',
+                                                        borderRadius: 0.75,
+                                                        overflow: 'hidden',
+                                                        border: '1px solid rgba(255,255,255,0.2)',
                                                     }}
                                                 >
-                                                    {String(tag)}
+                                                    <Box
+                                                        sx={{
+                                                            backgroundColor: '#2ecc71',
+                                                            color: '#000',
+                                                            fontWeight: 'bold',
+                                                            px: 0.75,
+                                                            py: 0.2,
+                                                        }}
+                                                    >
+                                                        {freq.dictionaryName}
+                                                    </Box>
+                                                    <Box
+                                                        sx={{
+                                                            backgroundColor: '#333',
+                                                            color: '#eee',
+                                                            px: 0.75,
+                                                            py: 0.2,
+                                                            fontWeight: 'bold',
+                                                        }}
+                                                    >
+                                                        {freq.value}
+                                                    </Box>
                                                 </Box>
                                             ))}
                                         </Box>
-                                        {settings.ankiConnectEnabled && (
-                                            <Stack direction="row" spacing={1} alignItems="center">
-                                                {(!settings.ankiDeck || !settings.ankiModel) ? (
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(event) => {
-                                                            event.stopPropagation();
-                                                            showAlert(
-                                                                'Anki Settings Missing',
-                                                                'Select a target Deck and Card Type in settings.',
-                                                            );
-                                                        }}
-                                                        title="Anki settings missing"
-                                                        sx={{ color: '#d04a4a' }}
-                                                    >
-                                                        <CloseIcon fontSize="small" />
-                                                    </IconButton>
-                                                ) : (() => {
-                                                    const entryKey = getDictionaryEntryKey(entry);
-                                                    if (ankiActionPending[entryKey]) {
-                                                        return (
-                                                            <IconButton
-                                                                size="small"
-                                                                disabled
-                                                                title="Adding card..."
-                                                                sx={{ color: '#888' }}
-                                                            >
-                                                                <HourglassEmptyIcon fontSize="small" />
-                                                            </IconButton>
-                                                        );
-                                                    }
-                                                    const status = getAnkiEntryStatus(entry);
-                                                    if (status === 'exists') {
-                                                        return (
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    handleAnkiOpen(entry);
-                                                                }}
-                                                                title="Open in Anki"
-                                                                sx={{ color: '#2ecc71' }}
-                                                            >
-                                                                <MenuBookIcon fontSize="small" />
-                                                            </IconButton>
-                                                        );
-                                                    }
-                                                    if (status === 'missing') {
-                                                        return (
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    handleAnkiAdd(entry);
-                                                                }}
-                                                                title="Add to Anki"
-                                                                sx={{ color: '#4fb0ff' }}
-                                                            >
-                                                                <AddCircleOutlineIcon fontSize="small" />
-                                                            </IconButton>
-                                                        );
-                                                    }
-                                                    return (
-                                                        <IconButton
-                                                            size="small"
-                                                            disabled
-                                                            title="Checking duplicates"
-                                                            sx={{ color: '#888' }}
-                                                        >
-                                                            <HourglassEmptyIcon fontSize="small" />
-                                                        </IconButton>
-                                                    );
-                                                })()}
-                                            </Stack>
-                                        )}
-                                    </Stack>
-                                    {entry.definitions?.map((def, defIndex) => (
+                                    )}
+                                    {entry.glossary?.map((def, defIndex) => (
                                         <Stack key={`${entry.headword}-def-${defIndex}`} sx={{ mb: 1 }}>
                                             <Stack direction="row" spacing={1} sx={{ mb: 0.5 }}>
-                                                {def.tags?.map((tag, tagIndex) => (
+                                                {normalizeTagList(def.tags ?? []).map((tag, tagIndex) => (
                                                     <Box
                                                         key={`${entry.headword}-def-${defIndex}-tag-${tagIndex}`}
                                                         sx={{
@@ -3275,6 +4418,8 @@ export const AnimeVideoPlayer = ({
                                         setEpisodeMenuAnchor(event.currentTarget);
                                     }}
                                     color="inherit"
+                                    aria-label="Episodes"
+                                    title="Episodes"
                                 >
                                     <FormatListBulletedIcon />
                                 </IconButton>
@@ -3286,6 +4431,8 @@ export const AnimeVideoPlayer = ({
                                     setVideoMenuAnchor(event.currentTarget);
                                 }}
                                 color="inherit"
+                                aria-label="Video options"
+                                title="Video options"
                             >
                                 <VideoSettingsIcon />
                             </IconButton>
@@ -3296,6 +4443,8 @@ export const AnimeVideoPlayer = ({
                                     setSubtitleMenuAnchor(event.currentTarget);
                                 }}
                                 color="inherit"
+                                aria-label="Subtitle options"
+                                title="Subtitle options"
                             >
                                 <SubtitlesIcon />
                             </IconButton>
@@ -3306,6 +4455,8 @@ export const AnimeVideoPlayer = ({
                                     setSpeedMenuAnchor(event.currentTarget);
                                 }}
                                 color="inherit"
+                                aria-label="Playback speed"
+                                title="Playback speed"
                             >
                                 <SpeedIcon />
                             </IconButton>
@@ -3313,11 +4464,15 @@ export const AnimeVideoPlayer = ({
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     markMenuInteraction();
-                                    showTapZoneHintFor(3000);
+                                    if (isDesktopPlatform) {
+                                        showShortcutHintFor(6000);
+                                    } else {
+                                        showTapZoneHintFor(3000);
+                                    }
                                 }}
                                 color="inherit"
-                                aria-label="Show tap zone"
-                                title="Show tap zone"
+                                aria-label={infoButtonLabel}
+                                title={infoButtonLabel}
                             >
                                 <InfoOutlinedIcon />
                             </IconButton>
@@ -3328,6 +4483,7 @@ export const AnimeVideoPlayer = ({
                                 }}
                                 color="inherit"
                                 aria-label="Manatan Settings"
+                                title="Manatan Settings"
                             >
                                 <Box
                                     component="img"
@@ -3340,9 +4496,11 @@ export const AnimeVideoPlayer = ({
                                 <IconButton
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        setIsPageFullscreen((prev) => !prev);
+                                        void toggleFullscreen();
                                     }}
                                     color="inherit"
+                                    aria-label={isPageFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                                    title={isPageFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                                 >
                                     {isPageFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
                                 </IconButton>
@@ -3355,6 +4513,8 @@ export const AnimeVideoPlayer = ({
                             }}
                             color="inherit"
                             sx={{ pointerEvents: 'auto' }}
+                            aria-label="Close player"
+                            title="Close player"
                         >
                             <CloseIcon />
                         </IconButton>
@@ -3379,7 +4539,7 @@ export const AnimeVideoPlayer = ({
                                 color="inherit"
                                 sx={{ pointerEvents: 'auto' }}
                             >
-                                <ReplayIcon />
+                                <RotateLeftIcon />
                             </IconButton>
                             <IconButton
                                 onClick={(event) => {
@@ -3405,33 +4565,32 @@ export const AnimeVideoPlayer = ({
                                 color="inherit"
                                 sx={{ pointerEvents: 'auto' }}
                             >
-                                <ForwardIcon />
+                                <RotateRightIcon />
                             </IconButton>
                         </Stack>
                     </Box>
                     <Stack spacing={1} sx={{ pointerEvents: 'none', position: 'relative', zIndex: 4 }}>
-                        <Stack direction="row" justifyContent="space-between" sx={{ pointerEvents: 'auto' }}>
-                            <Typography variant="caption" onClick={(event) => event.stopPropagation()}>
-                                {formatTime(currentTime)}
-                            </Typography>
-                            <Typography variant="caption" onClick={(event) => event.stopPropagation()}>
-                                {formatTime(duration)}
-                            </Typography>
-                        </Stack>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems="center" spacing={2}>
-                            <Box
-                                sx={{ position: 'relative', flexGrow: 1, width: '100%', pointerEvents: 'auto' }}
-                                onClick={(event) => event.stopPropagation()}
-                                onMouseDown={(event) => event.stopPropagation()}
-                            >
+                        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'center', sm: 'flex-end' }} spacing={2}>
+                            <Stack spacing={0.5} sx={{ flexGrow: 1, width: '100%', pointerEvents: 'auto' }}>
                                 <Box
                                     sx={{
+                                        position: 'relative',
+                                        width: '100%',
+                                        minHeight: 28,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                    }}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                >
+                                    <Box
+                                        sx={{
                                         position: 'absolute',
                                         top: '50%',
-                                        left: 12,
-                                        right: 12,
+                                        left: 0,
+                                        right: 0,
                                         height: 4,
-                                        transform: 'translateY(-50%)',
+                                        transform: 'translateY(calc(-50% + 12px))',
                                         backgroundColor: 'rgba(255,255,255,0.2)',
                                         borderRadius: 999,
                                     }}
@@ -3445,15 +4604,76 @@ export const AnimeVideoPlayer = ({
                                         }}
                                     />
                                 </Box>
-                                <Slider
-                                    value={duration ? (currentTime / duration) * 100 : 0}
-                                    onChange={handleSeek}
-                                    aria-label="Video position"
-                                    size="small"
-                                />
-                            </Box>
+                                    <Slider
+                                        value={duration ? (currentTime / duration) * 100 : 0}
+                                        onChange={handleSeek}
+                                        aria-label="Video position"
+                                        size="small"
+                                        sx={{ py: 0, transform: 'translateY(12px)' }}
+                                    />
+                                </Box>
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 1,
+                                        minHeight: 28,
+                                        pointerEvents: 'auto',
+                                    }}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                >
+                                    {shouldShowVolume && (
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                                px: 0.75,
+                                                py: 0.5,
+                                                borderRadius: 999,
+                                                backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                                                backdropFilter: 'blur(6px)',
+                                                width: 28,
+                                                overflow: 'hidden',
+                                                opacity: 0.7,
+                                                transition: 'width 200ms ease, opacity 200ms ease',
+                                                '&:hover, &:focus-within': {
+                                                    width: 160,
+                                                    opacity: 1,
+                                                },
+                                                '&:hover .volume-slider, &:focus-within .volume-slider': {
+                                                    opacity: 1,
+                                                },
+                                            }}
+                                        >
+                                            <VolumeUpIcon fontSize="small" />
+                                            <Slider
+                                                className="volume-slider"
+                                                value={volumePercent}
+                                                onChange={handleVolumeChange}
+                                                aria-label="Volume"
+                                                size="small"
+                                                min={0}
+                                                max={100}
+                                                sx={{
+                                                    width: 110,
+                                                    opacity: 0,
+                                                    transition: 'opacity 150ms ease',
+                                                }}
+                                            />
+                                        </Box>
+                                    )}
+                                    <Typography
+                                        variant="caption"
+                                        sx={{ whiteSpace: 'nowrap', lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                                    >
+                                        {formatTime(currentTime)} / {formatTime(duration)}
+                                    </Typography>
+                                </Box>
+                            </Stack>
                             <Stack spacing={0.5} alignItems="center" sx={{ pointerEvents: 'auto' }}>
-                                <Stack direction="row" spacing={1} alignItems="center">
+                                <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 28 }}>
                                     {(() => {
                                         const previousCue = getSubtitleSyncTarget('previous');
                                         return (
@@ -3468,7 +4688,7 @@ export const AnimeVideoPlayer = ({
                                                 aria-label="Align to previous subtitle start"
                                                 title="Align to previous subtitle start"
                                             >
-                                                <SkipPreviousIcon fontSize="small" />
+                                                <KeyboardDoubleArrowLeftIcon fontSize="small" />
                                             </IconButton>
                                         );
                                     })()}
@@ -3486,52 +4706,67 @@ export const AnimeVideoPlayer = ({
                                                 aria-label="Align to next subtitle start"
                                                 title="Align to next subtitle start"
                                             >
-                                                <SkipNextIcon fontSize="small" />
+                                                <KeyboardDoubleArrowRightIcon fontSize="small" />
                                             </IconButton>
                                         );
                                     })()}
                                 </Stack>
-                                <Stack direction="row" spacing={1} alignItems="center">
+                                <Box
+                                    sx={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'auto 64px auto',
+                                        alignItems: 'center',
+                                        columnGap: 1,
+                                        minHeight: 28,
+                                    }}
+                                >
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setSubtitleOffsetMs((prev) => (Number.isFinite(prev) ? prev : 0) - 100);
+                                        }}
+                                        color="inherit"
+                                        aria-label="Decrease subtitle offset 100 ms"
+                                        title="Shift subtitle offset -100 ms"
+                                    >
+                                        <KeyboardArrowLeftIcon fontSize="small" />
+                                    </IconButton>
                                     <Typography
                                         variant="caption"
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            if (isMobile) {
-                                                return;
-                                            }
-                                            promptSubtitleOffset();
+                                            openSubtitleOffsetDialog();
                                         }}
                                         onTouchEnd={(event) => {
-                                            if (!isMobile) {
-                                                return;
-                                            }
-                                            handleSubtitleOffsetTap(event);
+                                            event.stopPropagation();
+                                            openSubtitleOffsetDialog();
                                         }}
-                                        sx={{ cursor: isMobile ? 'default' : 'pointer' }}
+                                        sx={{
+                                            cursor: 'pointer',
+                                            minWidth: 64,
+                                            textAlign: 'center',
+                                            lineHeight: 1,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                        }}
                                     >
                                         {safeSubtitleOffsetMs} ms
                                     </Typography>
-                                <IconButton
-                                    size="small"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setSubtitleOffsetMs((prev) => (Number.isFinite(prev) ? prev : 0) - 100);
-                                    }}
-                                    color="inherit"
-                                >
-                                    -
-                                </IconButton>
-                                <IconButton
-                                    size="small"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setSubtitleOffsetMs((prev) => (Number.isFinite(prev) ? prev : 0) + 100);
-                                    }}
-                                    color="inherit"
-                                >
-                                    +
-                                </IconButton>
-                                </Stack>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setSubtitleOffsetMs((prev) => (Number.isFinite(prev) ? prev : 0) + 100);
+                                        }}
+                                        color="inherit"
+                                        aria-label="Increase subtitle offset 100 ms"
+                                        title="Shift subtitle offset +100 ms"
+                                    >
+                                        <KeyboardArrowRightIcon fontSize="small" />
+                                    </IconButton>
+                                </Box>
                             </Stack>
                         </Stack>
                     </Stack>
@@ -3543,7 +4778,10 @@ export const AnimeVideoPlayer = ({
                             markMenuInteraction();
                             setEpisodeMenuAnchor(null);
                         }}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
                         MenuListProps={{
+                            'data-word-audio-menu': 'true',
                             onClick: (event) => event.stopPropagation(),
                         }}
                         PaperProps={{
@@ -3561,6 +4799,8 @@ export const AnimeVideoPlayer = ({
                             markMenuInteraction();
                             setVideoMenuAnchor(null);
                         }}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
                         MenuListProps={{
                             onClick: (event) => event.stopPropagation(),
                         }}
@@ -3576,6 +4816,8 @@ export const AnimeVideoPlayer = ({
                             markMenuInteraction();
                             setSubtitleMenuAnchor(null);
                         }}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
                         MenuListProps={{
                             onClick: (event) => event.stopPropagation(),
                         }}
@@ -3618,6 +4860,8 @@ export const AnimeVideoPlayer = ({
                             markMenuInteraction();
                             setSpeedMenuAnchor(null);
                         }}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
                         MenuListProps={{
                             onClick: (event) => event.stopPropagation(),
                         }}
@@ -3710,6 +4954,172 @@ export const AnimeVideoPlayer = ({
                             </MenuItem>
                         )}
                     </Menu>
+                    <Menu
+                        anchorReference="anchorPosition"
+                        anchorPosition={wordAudioMenuAnchor ?? undefined}
+                        open={Boolean(wordAudioMenuAnchor)}
+                        onClose={(event) => {
+                            event?.stopPropagation?.();
+                            markMenuInteraction();
+                            closeWordAudioMenu();
+                        }}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
+                        MenuListProps={{
+                            onClick: (event) => event.stopPropagation(),
+                        }}
+                        PaperProps={{
+                            sx: { minWidth: 220 },
+                        }}
+                        sx={{ zIndex: isPageFullscreen || (fillHeight && isMobile) ? 1601 : undefined }}
+                    >
+                        <MenuItem
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                if (wordAudioMenuEntry) {
+                                    handlePlayWordAudio(wordAudioMenuEntry, 'auto');
+                                }
+                                closeWordAudioMenu();
+                            }}
+                        >
+                            <ListItemText
+                                primary="Auto (first available)"
+                                primaryTypographyProps={{
+                                    sx: {
+                                        textDecoration: wordAudioAutoAvailable === false ? 'line-through' : 'none',
+                                        color: wordAudioAutoAvailable === false ? '#777' : undefined,
+                                    },
+                                }}
+                            />
+                            <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (wordAudioMenuEntry) {
+                                        handleSelectWordAudioSource('auto', wordAudioMenuEntry);
+                                    }
+                                    closeWordAudioMenu();
+                                }}
+                                title="Use this source for cards"
+                                aria-label="Use this source for cards"
+                                sx={{
+                                    color:
+                                        wordAudioAutoAvailable === false
+                                            ? '#555'
+                                            : activeWordAudioSelection === 'auto'
+                                                ? '#f1c40f'
+                                                : '#777',
+                                }}
+                            >
+                                {renderSelectionIcon(activeWordAudioSelection === 'auto')}
+                            </IconButton>
+                        </MenuItem>
+                        {wordAudioOptions.map((source) => (
+                            <MenuItem
+                                key={source}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (wordAudioMenuEntry) {
+                                        handlePlayWordAudio(wordAudioMenuEntry, source);
+                                    }
+                                    closeWordAudioMenu();
+                                }}
+                            >
+                                <ListItemText
+                                    primary={getWordAudioSourceLabel(source)}
+                                    primaryTypographyProps={{
+                                        sx: {
+                                            textDecoration: wordAudioAvailability?.[source] === false ? 'line-through' : 'none',
+                                            color: wordAudioAvailability?.[source] === false ? '#777' : undefined,
+                                        },
+                                    }}
+                                />
+                                <IconButton
+                                    size="small"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        if (wordAudioMenuEntry) {
+                                            handleSelectWordAudioSource(source, wordAudioMenuEntry);
+                                        }
+                                        closeWordAudioMenu();
+                                    }}
+                                    title="Use this source for cards"
+                                    aria-label="Use this source for cards"
+                                    sx={{
+                                        color:
+                                            wordAudioAvailability?.[source] === false
+                                                ? '#555'
+                                                : activeWordAudioSelection === source
+                                                    ? '#f1c40f'
+                                                    : '#777',
+                                    }}
+                                >
+                                    {renderSelectionIcon(activeWordAudioSelection === source)}
+                                </IconButton>
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                    <Dialog
+                        open={subtitleOffsetDialogOpen}
+                        onClose={(_, reason) => {
+                            if (reason === 'backdropClick') {
+                                return;
+                            }
+                            closeSubtitleOffsetDialog();
+                        }}
+                        onClick={(event) => event.stopPropagation()}
+                        disablePortal={isFullscreenOverlay}
+                        container={menuContainer}
+                        disableEscapeKeyDown={false}
+                    >
+                        <DialogTitle>Subtitle offset</DialogTitle>
+                        <DialogContent sx={{ pt: 2, minWidth: 280 }}>
+                            <TextField
+                                label="Offset (ms)"
+                                type="number"
+                                value={subtitleOffsetInput}
+                                onChange={(event) => setSubtitleOffsetInput(event.target.value)}
+                                fullWidth
+                                autoFocus
+                                margin="dense"
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ step: 1 }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        applySubtitleOffsetInput();
+                                    }
+                                }}
+                            />
+                        </DialogContent>
+                        <DialogActions>
+                            <Button
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    resetSubtitleOffset();
+                                }}
+                            >
+                                Reset
+                            </Button>
+                            <Button
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    closeSubtitleOffsetDialog();
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="contained"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    applySubtitleOffsetInput();
+                                }}
+                            >
+                                Save
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
                 </Box>
             )}
                 </Box>

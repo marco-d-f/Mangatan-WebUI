@@ -22,6 +22,17 @@ interface VirtualReaderProps {
         totalProgress?: number;
     };
     renderHeader?: (showUI: boolean, toggleUI: () => void) => ReactNode;
+    onOpenToc?: () => void;
+    onUpdateSettings?: (key: string, value: any) => void;
+    chapterFilenames?: string[];
+    onChapterChange?: (chapterIndex: number) => void;
+    onPositionUpdate?: (position: {
+        chapterIndex: number;
+        pageIndex?: number;
+        chapterCharOffset?: number;
+        sentenceText: string;
+        totalProgress: number;
+    }) => void;
 }
 
 interface SharedPosition {
@@ -42,6 +53,12 @@ export const VirtualReader: React.FC<VirtualReaderProps> = ({
     initialPage = 0,
     initialProgress: externalInitialProgress,
     renderHeader,
+    onOpenToc,
+    onUpdateSettings,
+    chapterFilenames = [],
+    onChapterChange,
+    onPositionUpdate: externalPositionUpdate,
+
 }) => {
     const { showUI, toggleUI } = useUIVisibility({
         autoHideDelay: 5000,
@@ -89,6 +106,8 @@ export const VirtualReader: React.FC<VirtualReaderProps> = ({
             totalProgress: number;
         }) => {
             if (position.chapterCharOffset || position.sentenceText) {
+                const prevChapter = sharedPositionRef.current.chapterIndex;
+
                 sharedPositionRef.current = {
                     chapterIndex: position.chapterIndex,
                     pageIndex: position.pageIndex ?? 0,
@@ -98,15 +117,16 @@ export const VirtualReader: React.FC<VirtualReaderProps> = ({
                     timestamp: Date.now(),
                 };
 
-                console.log('[VirtualReader] Position updated:', {
-                    chapter: position.chapterIndex,
-                    charOffset: position.chapterCharOffset,
-                    sentence: position.sentenceText?.substring(0, 30) + '...',
-                });
+                if (onChapterChange && position.chapterIndex !== prevChapter) {
+                    onChapterChange(position.chapterIndex);
+                }
             }
+
+            externalPositionUpdate?.(position);
         },
-        []
+        [externalPositionUpdate, onChapterChange]
     );
+
 
 
     const handleRegisterSave = useCallback((saveFn: () => Promise<void>) => {
@@ -205,6 +225,9 @@ export const VirtualReader: React.FC<VirtualReaderProps> = ({
         initialProgress: activeProgress,
         onPositionUpdate: handlePositionUpdate,
         onRegisterSave: handleRegisterSave,
+        onOpenToc: onOpenToc,
+        onUpdateSettings,
+        chapterFilenames,
     };
 
     return (

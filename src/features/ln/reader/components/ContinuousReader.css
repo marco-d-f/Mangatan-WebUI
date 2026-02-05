@@ -5,6 +5,11 @@
     right: 0;
     bottom: 0;
     overflow: hidden;
+
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
 }
 
 .continuous-reader-container {
@@ -275,4 +280,112 @@
 .continuous-content.furigana-hidden rt {
     visibility: hidden;
     font-size: 0;
+}
+
+/* Drop caps / Decorative initial letters */
+.paged-content .drop-cap,
+.paged-content img.initial {
+    display: inline-block;
+    float: left;
+    margin: 0 0.1em 0 0;
+    max-height: 3em;
+    width: auto;
+    line-height: 1;
+}
+
+/* Emoji and small inline icons */
+.paged-content .emoji,
+.paged-content img[class*="icon"],
+.paged-content img[class*="emoji"] {
+    display: inline;
+    height: 1em;
+    width: auto;
+    margin: 0;
+    vertical-align: -0.1em;
+    break-inside: auto;
+}
+
+/* Ruby annotations with images (rare but exists) */
+.paged-content ruby img {
+    display: inline;
+    height: 0.5em;
+    width: auto;
+    margin: 0;
+    vertical-align: baseline;
+}
+
+/* =====================================================
+   HYPERLINKS
+   ===================================================== */
+
+.paged-content a,
+.continuous-content a,
+.chapter-block a {
+    color: #4890ff;
+    text-decoration: underline;
+    text-decoration-color: rgba(72, 144, 255, 0.5);
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.paged-content a:hover,
+.continuous-content a:hover,
+.chapter-block a:hover {
+    opacity: 0.7;
+    text-decoration-color: rgba(72, 144, 255, 0.8);
+}
+
+.paged-content a:active,
+.continuous-content a:active,
+.chapter-block a:active {
+    opacity: 0.5;
+}
+
+/* =====================================================
+   INLINE IMAGES - Override 
+   ===================================================== */
+
+/* Gaiji and inline character images */
+.chapter-block img.gaiji,
+.chapter-block img.gaiji-line,
+.chapter-block img.gaiji1,
+.chapter-block img.inline-img,
+.chapter-block.horizontal img.gaiji,
+.chapter-block.horizontal img.gaiji-line,
+.chapter-block.horizontal img.gaiji1,
+.chapter-block.horizontal img.inline-img,
+.chapter-block.vertical img.gaiji,
+.chapter-block.vertical img.gaiji-line,
+.chapter-block.vertical img.gaiji1,
+.chapter-block.vertical img.inline-img {
+    display: inline-block !important;
+    vertical-align: baseline !important;
+    max-width: 1.5em !important;
+    max-height: 1.5em !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 0.1em !important;
+    padding: 0 !important;
+}
+
+/* Any small image (likely inline) */
+.chapter-block img[width="1"],
+.chapter-block img[width="2"],
+.chapter-block img[height="1"],
+.chapter-block img[height="2"] {
+    display: inline-block !important;
+    max-width: 1.5em !important;
+    max-height: 1.5em !important;
+    vertical-align: baseline !important;
+    margin: 0 0.1em !important;
+}
+
+/* Images with inline style */
+.chapter-block img[style*="display: inline"],
+.chapter-block img[style*="display:inline"] {
+    display: inline-block !important;
+    vertical-align: baseline !important;
+    max-width: 1.5em !important;
+    max-height: 1.5em !important;
+    margin: 0 0.1em !important;
 }

@@ -76,9 +76,14 @@ export function handleKeyNavigation(
 ): boolean {
     const { isVertical, isRTL, isPaged } = options;
 
-    switch (event.key) {
-        // Left/Right arrows
+    // Use event.code for physical key position (consistent across all browsers/keyboards)
+    // Fall back to event.key for older browsers
+    const keyCode = event.code || event.key;
+
+    switch (keyCode) {
+        // Left/Right arrows - use PHYSICAL key position
         case 'ArrowLeft':
+        case 'KeyLeft': // Fallback for older browsers
             if (isVertical) {
                 // Vertical text: left = forward (RTL) or backward (LTR)
                 if (isRTL) callbacks.goNext();
@@ -90,6 +95,7 @@ export function handleKeyNavigation(
             return true;
 
         case 'ArrowRight':
+        case 'KeyRight': // Fallback for older browsers
             if (isVertical) {
                 // Vertical text: right = backward (RTL) or forward (LTR)
                 if (isRTL) callbacks.goPrev();
@@ -102,6 +108,7 @@ export function handleKeyNavigation(
 
         // Up/Down arrows
         case 'ArrowDown':
+        case 'KeyDown': // Fallback for older browsers
             if (isVertical) {
                 // Vertical text: down scrolls within column, not page navigation
                 if (!isPaged) return false; // Let browser handle
@@ -115,6 +122,7 @@ export function handleKeyNavigation(
             }
 
         case 'ArrowUp':
+        case 'KeyUp': // Fallback for older browsers
             if (isVertical) {
                 if (!isPaged) return false;
                 callbacks.goPrev();
@@ -133,7 +141,8 @@ export function handleKeyNavigation(
             callbacks.goPrev();
             return true;
 
-        case ' ':
+        case 'Space':
+        case ' ': // Handle both code and key for spacebar
             if (!event.shiftKey) callbacks.goNext();
             else callbacks.goPrev();
             return true;
@@ -185,9 +194,6 @@ export function handleWheelNavigation(
     return true;
 }
 
-/**
- * Handle touch end for swipe navigation
- */
 export function handleTouchEnd(
     event: TouchEvent,
     touchStart: TouchState,
@@ -206,34 +212,23 @@ export function handleTouchEnd(
     if (deltaTime > maxTime) return null;
 
     if (isVertical) {
-        // Horizontal swipe for vertical text
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minDistance) {
-            if (isRTL) {
-                if (deltaX < 0) {
-                    callbacks.goNext();
-                    return 'next';
-                } else {
-                    callbacks.goPrev();
-                    return 'prev';
-                }
-            } else {
-                if (deltaX < 0) {
-                    callbacks.goPrev();
-                    return 'prev';
-                } else {
-                    callbacks.goNext();
-                    return 'next';
-                }
-            }
-        }
-    } else {
-        // Vertical swipe for horizontal text
-        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > minDistance) {
-            if (deltaY < 0) {
+            if (deltaX > 0) {
                 callbacks.goNext();
                 return 'next';
             } else {
                 callbacks.goPrev();
+                return 'prev';
+            }
+        }
+    } else {
+        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > minDistance) {
+
+            if (deltaY > 0) {
+                callbacks.goPrev();
+                return 'next';
+            } else {
+                callbacks.goNext();
                 return 'prev';
             }
         }

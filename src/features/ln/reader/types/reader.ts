@@ -28,6 +28,8 @@ export interface BaseReaderProps {
         totalProgress: number;
     }) => void;
     onRegisterSave?: (saveFn: () => Promise<void>) => void;
+    onUpdateSettings?: (key: string, value: any) => void;
+    chapterFilenames: string[];
 }
 
 export interface PagedReaderProps extends BaseReaderProps {

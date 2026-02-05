@@ -173,7 +173,6 @@ export function useProgressManager({
         const container = containerRef.current;
         if (!container || !stats || !isReady) return null;
 
-
         let chapterProgress: number;
 
         if (isPaged && totalPagesRef.current && totalPagesRef.current > 1) {
@@ -192,23 +191,32 @@ export function useProgressManager({
         let sentenceText = '';
         let chapterCharOffset = 0;
 
+        // In paged mode, calculate chapterCharOffset from chapterProgress
+        if (isPaged) {
+            const currentChapterLength = stats.chapterLengths[chapterRef.current] || 0;
+            chapterCharOffset = Math.floor(currentChapterLength * (chapterProgress / 100));
+        }
+
         const textPos = getTextAtReadingPosition(container, isVertical);
         if (textPos) {
             sentenceText = extractSentenceContext(textPos.node, textPos.offset);
 
-            let chapterEl: Element | null = container.querySelector(
-                `[data-chapter="${chapterRef.current}"]`
-            );
-            if (!chapterEl) {
-                chapterEl = container.querySelector('.paged-content') || container;
-            }
-
-            if (chapterEl) {
-                chapterCharOffset = calculateChapterCharOffset(
-                    chapterEl,
-                    textPos.node,
-                    textPos.offset
+            // Only recalculate chapterCharOffset from DOM in continuous mode
+            if (!isPaged) {
+                let chapterEl: Element | null = container.querySelector(
+                    `[data-chapter="${chapterRef.current}"]`
                 );
+                if (!chapterEl) {
+                    chapterEl = container.querySelector('.paged-content') || container;
+                }
+
+                if (chapterEl) {
+                    chapterCharOffset = calculateChapterCharOffset(
+                        chapterEl,
+                        textPos.node,
+                        textPos.offset
+                    );
+                }
             }
         }
 
@@ -239,6 +247,7 @@ export function useProgressManager({
 
         const position = updatePosition();
         if (position) {
+            setCurrentPosition(position);
             scheduleSave(position);
         }
     }, [isReady, updatePosition, scheduleSave]);
@@ -246,36 +255,32 @@ export function useProgressManager({
 
     const reportChapterChange = useCallback(
         (chapter: number, page?: number) => {
-            if (!isReady) return;
-
             const previousChapter = chapterRef.current;
             chapterRef.current = chapter;
             pageRef.current = page ?? 0;
 
-            setTimeout(() => {
-                const position = updatePosition();
-                if (position) {
-                    if (saveTimerRef.current) {
-                        clearTimeout(saveTimerRef.current);
-                        saveTimerRef.current = null;
-                    }
+            const position = updatePosition();
+            if (position) {
+                setCurrentPosition(position);
 
-                    if (chapter !== previousChapter) {
-                        savePosition(position);
-                    } else {
-                        scheduleSave(position);
-                    }
+                if (saveTimerRef.current) {
+                    clearTimeout(saveTimerRef.current);
+                    saveTimerRef.current = null;
                 }
-            }, 100);
+
+                if (chapter !== previousChapter) {
+                    savePosition(position);
+                } else {
+                    scheduleSave(position);
+                }
+            }
         },
-        [isReady, updatePosition, savePosition, scheduleSave]
+        [updatePosition, savePosition, scheduleSave]
     );
 
 
     const reportPageChange = useCallback(
         (page: number, total?: number) => {
-            if (!isReady) return;
-
             pageRef.current = page;
             if (total !== undefined) {
                 totalPagesRef.current = total;
@@ -283,10 +288,11 @@ export function useProgressManager({
 
             const position = updatePosition();
             if (position) {
+                setCurrentPosition(position);
                 scheduleSave(position);
             }
         },
-        [isReady, updatePosition, scheduleSave]
+        [updatePosition, scheduleSave]
     );
 
 

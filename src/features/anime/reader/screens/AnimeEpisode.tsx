@@ -6,10 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTranslation } from 'react-i18next';
@@ -83,6 +89,12 @@ export const AnimeEpisode = () => {
         `anime-${id ?? 'unknown'}-video-key`,
         null,
     );
+    const [jimakuTitleOverride, setJimakuTitleOverride] = useLocalStorage<string | null>(
+        `anime-${id ?? 'unknown'}-jimaku-title-override`,
+        null,
+    );
+    const [isJimakuTitleDialogOpen, setIsJimakuTitleDialogOpen] = useState(false);
+    const [jimakuDraftTitle, setJimakuDraftTitle] = useState('');
     const [braveAudioFixMode, setBraveAudioFixMode] = useLocalStorage<'auto' | 'on' | 'off'>(
         `anime-${id ?? 'unknown'}-brave-audio-fix-mode`,
         'auto',
@@ -100,6 +112,11 @@ export const AnimeEpisode = () => {
     const [jimakuFiles, setJimakuFiles] = useState<JimakuFileEntry[]>([]);
     const [jimakuReady, setJimakuReady] = useState(true);
     const lastVideoWarningRef = useRef<string | null>(null);
+    const dialogContainer = typeof document !== 'undefined' ? document.fullscreenElement ?? undefined : undefined;
+    const dialogZIndex =
+        (typeof document !== 'undefined' && document.fullscreenElement) || isMobile
+            ? theme.zIndex.modal + 400
+            : undefined;
 
     useEffect(() => {
         if (!id || !episodeIndex) {
@@ -384,7 +401,8 @@ export const AnimeEpisode = () => {
             return;
         }
 
-        if (!animeTitle || !Number.isFinite(numericEpisodeNumber)) {
+        const resolvedTitle = jimakuTitleOverride?.trim() || animeTitle;
+        if (!resolvedTitle || !Number.isFinite(numericEpisodeNumber)) {
             setJimakuFiles([]);
             setJimakuReady(false);
             return;
@@ -392,10 +410,11 @@ export const AnimeEpisode = () => {
 
         let isMounted = true;
         setJimakuReady(false);
+        const shouldUseAnilistId = !jimakuTitleOverride?.trim();
         loadJimakuEpisodeFiles({
             apiKey,
-            title: animeTitle,
-            anilistId: animeAnilistId,
+            title: resolvedTitle,
+            anilistId: shouldUseAnilistId ? animeAnilistId : null,
             episodeNumber: numericEpisodeNumber,
         })
             .then((files) => {
@@ -418,7 +437,35 @@ export const AnimeEpisode = () => {
         return () => {
             isMounted = false;
         };
-    }, [settings.jimakuApiKey, animeTitle, animeAnilistId, numericEpisodeNumber]);
+    }, [settings.jimakuApiKey, jimakuTitleOverride, animeTitle, animeAnilistId, numericEpisodeNumber]);
+
+    const openJimakuTitleDialog = useCallback(() => {
+        const currentTitle = jimakuTitleOverride?.trim() || animeTitle || '';
+        setJimakuDraftTitle(currentTitle);
+        setIsJimakuTitleDialogOpen(true);
+    }, [animeTitle, jimakuTitleOverride]);
+
+    const closeJimakuTitleDialog = useCallback(() => {
+        setIsJimakuTitleDialogOpen(false);
+    }, []);
+
+    const handleSaveJimakuTitle = useCallback(() => {
+        const trimmed = jimakuDraftTitle.trim();
+        setJimakuTitleOverride(trimmed ? trimmed : null);
+        if (trimmed) {
+            makeToast(`Jimaku title set to "${trimmed}".`, { variant: 'success', autoHideDuration: 1500 });
+        } else {
+            makeToast('Cleared Jimaku title override.', { variant: 'info', autoHideDuration: 1500 });
+        }
+        setIsJimakuTitleDialogOpen(false);
+    }, [jimakuDraftTitle, setJimakuTitleOverride]);
+
+    const handleResetJimakuTitle = useCallback(() => {
+        setJimakuTitleOverride(null);
+        setJimakuDraftTitle(animeTitle ?? '');
+        makeToast('Cleared Jimaku title override.', { variant: 'info', autoHideDuration: 1500 });
+        setIsJimakuTitleDialogOpen(false);
+    }, [animeTitle, setJimakuTitleOverride]);
 
     const jimakuSubtitleTracks = useMemo<SubtitleTrack[]>(() => {
         const isSubtitleFile = (name: string) => /\.(srt|vtt|ass|ssa)$/i.test(name);
@@ -492,9 +539,11 @@ export const AnimeEpisode = () => {
             onVideoChange={handleVideoChange}
             subtitleTracks={combinedSubtitleTracks}
             subtitleTracksReady={subtitleTracksReady}
+            jimakuTitleOverride={jimakuTitleOverride}
+            onRequestJimakuTitleOverride={openJimakuTitleDialog}
             title={episodeTitle}
             animeId={id ?? 'unknown'}
-            fillHeight={isMobile}
+            fillHeight
             showFullscreenButton={!isMobile}
             statusMessage={playerStatusMessage}
             onExit={() => {
@@ -510,17 +559,19 @@ export const AnimeEpisode = () => {
     return (
         <Stack
             sx={{
-                p: isMobile ? 0 : 2,
-                gap: isMobile ? 0 : 2,
-                minHeight: isMobile ? '100vh' : 'auto',
-                backgroundColor: isMobile ? 'black' : 'transparent',
+                p: 0,
+                gap: 0,
+                minHeight: '100vh',
+                height: '100vh',
+                backgroundColor: 'black',
             }}
         >
             <Box
                 sx={{
                     width: '100%',
                     backgroundColor: 'black',
-                    minHeight: isMobile ? '100vh' : 'auto',
+                    minHeight: '100vh',
+                    height: '100%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -529,13 +580,41 @@ export const AnimeEpisode = () => {
                 <Box
                     sx={{
                         width: '100%',
-                        maxWidth: isMobile ? '100%' : 960,
-                        height: isMobile ? '100vh' : 'auto',
+                        maxWidth: '100%',
+                        height: '100%',
                     }}
                 >
                     {playerContent}
                 </Box>
             </Box>
+            <Dialog
+                fullWidth
+                maxWidth="xs"
+                open={isJimakuTitleDialogOpen}
+                onClose={closeJimakuTitleDialog}
+                container={dialogContainer}
+                sx={dialogZIndex ? { zIndex: dialogZIndex } : undefined}
+                PaperProps={dialogZIndex ? { sx: { position: 'relative' } } : undefined}
+            >
+                <DialogTitle>Jimaku title</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Title"
+                        fullWidth
+                        value={jimakuDraftTitle}
+                        onChange={(event) => setJimakuDraftTitle(event.target.value)}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleResetJimakuTitle}>Reset</Button>
+                    <Button onClick={closeJimakuTitleDialog}>Cancel</Button>
+                    <Button onClick={handleSaveJimakuTitle} variant="contained">
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Stack>
     );
 };

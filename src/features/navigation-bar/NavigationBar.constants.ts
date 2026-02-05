@@ -11,6 +11,8 @@ import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import MovieFilterIcon from '@mui/icons-material/MovieFilter';
 import MovieFilterOutlinedIcon from '@mui/icons-material/MovieFilterOutlined';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
+import TranslateIcon from '@mui/icons-material/Translate';
+import TranslateOutlinedIcon from '@mui/icons-material/TranslateOutlined';
 import NewReleasesIcon from '@mui/icons-material/NewReleases';
 import NewReleasesOutlinedIcon from '@mui/icons-material/NewReleasesOutlined';
 import HistoryIcon from '@mui/icons-material/History';
@@ -56,10 +58,10 @@ const NAVIGATION_BAR_BASE_ITEMS = [
         moreGroup: NavBarItemMoreGroup.GENERAL,
     },
     {
-        path: AppRoutes.updates.path,
-        title: 'updates.title',
-        SelectedIconComponent: NewReleasesIcon,
-        IconComponent: NewReleasesOutlinedIcon,
+        path: AppRoutes.dictionary.path as RestrictedNavBarItem<'both'>['path'],
+        title: 'Dictionary',
+        SelectedIconComponent: TranslateIcon,
+        IconComponent: TranslateOutlinedIcon,
         show: 'both',
         moreGroup: NavBarItemMoreGroup.GENERAL,
     },
@@ -101,6 +103,14 @@ const NAVIGATION_BAR_BASE_ITEMS = [
 ] as const satisfies RestrictedNavBarItem<'both'>[];
 
 const NAVIGATION_BAR_DESKTOP_ITEMS = [
+    {
+        path: AppRoutes.updates.path,
+        title: 'updates.title',
+        SelectedIconComponent: NewReleasesIcon,
+        IconComponent: NewReleasesOutlinedIcon,
+        show: 'desktop',
+        moreGroup: NavBarItemMoreGroup.GENERAL,
+    },
     {
         path: AppRoutes.downloads.path,
         title: 'download.title.download',

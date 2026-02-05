@@ -101,6 +101,7 @@ const { Reader } = loadable(() => import('@/features/reader/screens/Reader.tsx')
 const { HistorySettings } = loadable(() => import('@/features/history/screens/HistorySettings.tsx'), lazyLoadFallback);
 const { LNLibrary } = loadable(() => import('@/features/ln/screens/LNLibrary.tsx'), lazyLoadFallback);
 const { LNReaderScreen } = loadable(() => import('@/features/ln/reader/screens/LNReaderScreen.tsx'), lazyLoadFallback);
+const { Dictionary } = loadable(() => import('@/features/dictionary/Dictionary.tsx'), lazyLoadFallback);
 
 if (import.meta.env.DEV) {
     // Adds messages only in a dev environment
@@ -312,6 +313,7 @@ const MainApp = () => {
                             <Route index element={<AnimeLibrary />} />
                         </Route>
                         <Route path={AppRoutes.library.match} element={<Library />} />
+                        <Route path={AppRoutes.dictionary.match} element={<Dictionary />} />
                         <Route path={AppRoutes.updates.match} element={<Updates />} />
                         {!hideHistory && <Route path={AppRoutes.history.match} element={<History />} />}
                         <Route path={AppRoutes.browse.match} element={<Browse />} />

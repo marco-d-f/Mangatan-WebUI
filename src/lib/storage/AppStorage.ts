@@ -105,6 +105,12 @@ export interface BookStats {
     totalLength: number;
 }
 
+export interface TocItem {
+    label: string;
+    href: string;
+    chapterIndex: number;
+}
+
 export interface LNMetadata {
     id: string;
     title: string;
@@ -120,6 +126,7 @@ export interface LNMetadata {
     // Pre-calculated on import
     stats: BookStats;
     chapterCount: number;
+    toc: TocItem[];
 
     // For library display
     hasProgress?: boolean;
@@ -147,6 +154,7 @@ export interface LNProgress {
 export interface LNParsedBook {
     chapters: string[];              // Pre-parsed HTML for each chapter
     imageBlobs: Record<string, Blob>; // Original blobs for images
+    chapterFilenames: string[];      // Filename for each chapter
 }
 
 export class AppStorage {

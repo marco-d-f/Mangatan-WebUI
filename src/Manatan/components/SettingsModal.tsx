@@ -1,10 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
+import AddIcon from '@mui/icons-material/Add';
+import { bindTrigger, usePopupState } from 'material-ui-popup-state/hooks';
 import { useOCR } from '@/Manatan/context/OCRContext';
 import { AppStorage } from '@/lib/storage/AppStorage.ts';
 import { COLOR_THEMES, DEFAULT_SETTINGS } from '@/Manatan/types';
-import { apiRequest, getAppVersion, checkForUpdates, triggerAppUpdate, installAppUpdate } from '@/Manatan/utils/api';
+import { apiRequest, getAppVersion, checkForUpdates, triggerAppUpdate, installAppUpdate, getFrequencyDictionaries, getDictionaries } from '@/Manatan/utils/api';
 import { DictionaryManager } from './DictionaryManager';
 import { getAnkiVersion, getDeckNames, getModelNames, getModelFields } from '@/Manatan/utils/anki';
+import { ResetButton } from '@/base/components/buttons/ResetButton.tsx';
+import { Hotkey } from '@/features/reader/hotkeys/settings/components/Hotkey.tsx';
+import { RecordHotkey } from '@/features/reader/hotkeys/settings/components/RecordHotkey.tsx';
+import { AnimeHotkey, ANIME_HOTKEYS, ANIME_HOTKEY_LABELS, DEFAULT_ANIME_HOTKEYS } from '@/Manatan/hotkeys/AnimeHotkeys.ts';
 
 const checkboxLabelStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', marginBottom: '8px', cursor: 'pointer', textAlign: 'left', 
@@ -32,22 +41,164 @@ const statusDotStyle = (connected: boolean): React.CSSProperties => ({
     boxShadow: connected ? '0 0 5px #2ecc71' : 'none'
 });
 
-const MAPPING_OPTIONS = [
+const hotkeyRowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+};
+
+const AnimeHotkeyRow = ({
+    hotkey,
+    keys,
+    existingKeys,
+    onChange,
+}: {
+    hotkey: AnimeHotkey;
+    keys: string[];
+    existingKeys: string[];
+    onChange: (keys: string[]) => void;
+}) => {
+    const popupState = usePopupState({ popupId: `manatan-record-hotkey-${hotkey}`, variant: 'dialog' });
+
+    return (
+        <div style={hotkeyRowStyle}>
+            <Typography variant="body2" sx={{ minWidth: 200, flexGrow: 1 }}>
+                {ANIME_HOTKEY_LABELS[hotkey]}
+            </Typography>
+            <Hotkey
+                keys={keys}
+                removeKey={(keyToRemove) => onChange(keys.filter((key) => key !== keyToRemove))}
+            />
+            <IconButton {...bindTrigger(popupState)} size="small" color="inherit" aria-label="Add hotkey">
+                <AddIcon fontSize="small" />
+            </IconButton>
+            <ResetButton asIconButton onClick={() => onChange(DEFAULT_ANIME_HOTKEYS[hotkey])} />
+            {popupState.isOpen && (
+                <RecordHotkey
+                    onClose={popupState.close}
+                    onCreate={(recordedKeys) => onChange([...keys, ...recordedKeys])}
+                    existingKeys={existingKeys}
+                    disablePortal
+                />
+            )}
+        </div>
+    );
+};
+
+const BASE_MAPPING_OPTIONS = [
     'None',
     'Sentence',
+    'Sentence Furigana',
     'Sentence Audio',
+    'Word Audio',
     'Image',
     'Furigana',
     'Reading',
     'Target Word',
-    'Definition',
+    'Glossary',
     'Frequency',
 ];
+
+const SINGLE_GLOSSARY_PREFIX = 'Single Glossary ';
+
+const getSingleGlossaryName = (value: string): string | null => {
+    if (value.startsWith(SINGLE_GLOSSARY_PREFIX)) {
+        const name = value.slice(SINGLE_GLOSSARY_PREFIX.length).trim();
+        return name ? name : null;
+    }
+    if (value.startsWith('Single Glossary:')) {
+        const name = value.replace('Single Glossary:', '').trim();
+        return name ? name : null;
+    }
+    return null;
+};
 export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { settings, setSettings, showConfirm, showAlert, showProgress, closeDialog, showDialog, openSetup } = useOCR();
     const [localSettings, setLocalSettings] = useState(settings);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [dictManagerKey, setDictManagerKey] = useState(0);
+    const [dictionaryNames, setDictionaryNames] = useState<string[]>([]);
+    const persistSettings = useCallback((nextSettings: typeof settings) => {
+        AppStorage.local.setItem('mangatan_settings_v3', JSON.stringify(nextSettings));
+        setSettings(nextSettings);
+    }, [setSettings]);
+    const animeHotkeys = useMemo(
+        () => ({
+            ...DEFAULT_ANIME_HOTKEYS,
+            ...(localSettings.animeHotkeys ?? {}),
+        }),
+        [localSettings.animeHotkeys],
+    );
+    const existingAnimeHotkeys = useMemo(() => Object.values(animeHotkeys).flat(), [animeHotkeys]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchDictionaries = async () => {
+            const list = await getDictionaries();
+            if (!list || cancelled) {
+                if (!cancelled) {
+                    setTimeout(fetchDictionaries, 1000);
+                }
+                return;
+            }
+            const names = Array.from(new Set(list.map((dict) => dict.name).filter(Boolean)));
+            setDictionaryNames(names);
+            setLocalSettings((prev) => {
+                if (!prev.ankiFieldMap) {
+                    return prev;
+                }
+                let changed = false;
+                const nextMap = { ...prev.ankiFieldMap };
+                Object.entries(nextMap).forEach(([field, value]) => {
+                    if (typeof value !== 'string') {
+                        return;
+                    }
+                    const name = getSingleGlossaryName(value);
+                    if (name && !names.includes(name)) {
+                        nextMap[field] = 'None';
+                        changed = true;
+                    }
+                });
+                if (!changed) {
+                    return prev;
+                }
+                const next = { ...prev, ankiFieldMap: nextMap };
+                persistSettings(next);
+                return next;
+            });
+        };
+        fetchDictionaries();
+        return () => {
+            cancelled = true;
+        };
+    }, [dictManagerKey, persistSettings]);
+
+    const mappingOptions = useMemo(() => {
+        const baseOptions = BASE_MAPPING_OPTIONS.map((option) => ({ value: option, label: option }));
+        const glossaryOptions = dictionaryNames.map((name) => ({
+            value: `${SINGLE_GLOSSARY_PREFIX}${name}`,
+            label: `${SINGLE_GLOSSARY_PREFIX}${name}`,
+        }));
+
+        return [...baseOptions, ...glossaryOptions];
+    }, [dictionaryNames, localSettings.ankiFieldMap]);
+    const [availableFreqDicts, setAvailableFreqDicts] = useState<string[]>([]);
+
+    const updateAnimeHotkey = useCallback((hotkey: AnimeHotkey, keys: string[]) => {
+        setLocalSettings((prev) => {
+            const next = {
+                ...prev,
+                animeHotkeys: {
+                    ...DEFAULT_ANIME_HOTKEYS,
+                    ...(prev.animeHotkeys ?? {}),
+                    [hotkey]: keys,
+                },
+            };
+            persistSettings(next);
+            return next;
+        });
+    }, [persistSettings]);
 
     // --- ANKI STATE ---
     const [ankiStatus, setAnkiStatus] = useState<'idle' | 'loading' | 'connected' | 'error'>('idle');
@@ -64,6 +215,13 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     const [updateAvailable, setUpdateAvailable] = useState<any>(null);
     const [updateStatus, setUpdateStatus] = useState<string>('idle');
 
+    useEffect(() => {
+        const fetchFreqDicts = async () => {
+            const dicts = await getFrequencyDictionaries();
+            setAvailableFreqDicts(dicts);
+        };
+        fetchFreqDicts();
+    }, []);
     // --- ANKI EFFECT ---
     const fetchAnkiData = async () => {
         if (!localSettings.ankiConnectEnabled) return;
@@ -192,10 +350,14 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     };
 
     const handleChange = async (key: keyof typeof settings | string, value: any) => {
-        setLocalSettings((prev) => ({ ...prev, [key]: value }));
+        setLocalSettings((prev) => {
+            const next = { ...prev, [key]: value };
+            persistSettings(next);
+            return next;
+        });
 
         if (key === 'enableYomitan' && value === true) {
-            const language = localSettings.yomitanLanguage || 'japanese';
+            const language = (key === 'yomitanLanguage' ? value : localSettings.yomitanLanguage) || 'japanese';
             await installDictionary(language);
         }
     };
@@ -240,18 +402,13 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         return Object.keys(localSettings.ankiFieldMap || {}).find(key => localSettings.ankiFieldMap?.[key] === contentType) || '';
     };
 
-    const save = () => {
-        AppStorage.local.setItem('mangatan_settings_v3', JSON.stringify(localSettings));
-        setSettings(localSettings);
-        onClose();
-        window.location.reload();
-    };
-
     const resetToDefaults = () => {
         showConfirm('Reset?', 'Revert to defaults?', () => {
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            setLocalSettings({ ...DEFAULT_SETTINGS, mobileMode: isMobile });
-            closeDialog(); 
+            const next = { ...DEFAULT_SETTINGS, mobileMode: isMobile };
+            setLocalSettings(next);
+            persistSettings(next);
+            closeDialog();
         });
     };
 
@@ -286,19 +443,49 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     const handleImportClick = () => fileInputRef.current?.click();
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) {
-            const file = e.target.files[0];
+        const files = e.target.files ? Array.from(e.target.files) : [];
+        if (!files.length) {
+            return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+        let lastMessage = '';
+
+        for (let i = 0; i < files.length; i += 1) {
+            const file = files[i];
             const formData = new FormData();
             formData.append('file', file);
             try {
-                showProgress(`Importing...`);
+                showProgress(`Importing ${i + 1}/${files.length}...`);
                 const res = await fetch('/api/yomitan/import', { method: 'POST', body: formData });
                 const json = await res.json();
-                closeDialog(); 
-                showAlert(json.status === 'ok' ? 'Success' : 'Failed', json.message);
-                if (json.status === 'ok') setDictManagerKey(p => p + 1);
-            } catch (err) { closeDialog(); showAlert('Error', String(err)); }
-            if (fileInputRef.current) fileInputRef.current.value = '';
+                lastMessage = json.message || lastMessage;
+                if (json.status === 'ok') {
+                    successCount += 1;
+                } else {
+                    failCount += 1;
+                }
+            } catch (err) {
+                failCount += 1;
+                lastMessage = String(err);
+            }
+        }
+
+        closeDialog();
+        if (successCount > 0) {
+            setDictManagerKey((p) => p + 1);
+        }
+        if (failCount === 0) {
+            showAlert('Success', `Imported ${successCount} dictionaries.`);
+        } else if (successCount === 0) {
+            showAlert('Failed', lastMessage || 'No dictionaries were imported.');
+        } else {
+            showAlert('Partial Success', `Imported ${successCount}. Failed ${failCount}. ${lastMessage || ''}`.trim());
+        }
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
         }
     };
 
@@ -309,11 +496,18 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     const showDicts = isNativeApp || localSettings.enableYomitan;
 
     return (
-        <div className="ocr-modal-overlay" onClick={onClose}>
+        <div
+            className="ocr-modal-overlay"
+            onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                    onClose();
+                }
+            }}
+        >
             <div className="ocr-modal settings-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="ocr-modal-content">
                     <h2>Settings</h2>
-                    <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".zip" onChange={handleFileChange} />
+                    <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".zip" multiple onChange={handleFileChange} />
 
                     {/* --- UPDATE BANNER --- */}
                     {updateStatus === 'downloading' && (
@@ -382,6 +576,44 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                 <option value="english">English</option>
                                 <option value="chinese">Chinese</option>
                                 <option value="korean">Korean</option>
+                                <option value="arabic">Arabic</option>
+                                <option value="spanish">Spanish</option>
+                                <option value="french">French</option>
+                                <option value="german">German</option>
+                                <option value="portuguese">Portuguese</option>
+                                <option value="bulgarian">Bulgarian</option>
+                                <option value="cantonese">Cantonese</option>
+                                <option value="czech">Czech</option>
+                                <option value="danish">Danish</option>
+                                <option value="estonian">Estonian</option>
+                                <option value="finnish">Finnish</option>
+                                <option value="georgian">Georgian</option>
+                                <option value="greek">Greek</option>
+                                <option value="hebrew">Hebrew</option>
+                                <option value="hindi">Hindi</option>
+                                <option value="hungarian">Hungarian</option>
+                                <option value="indonesian">Indonesian</option>
+                                <option value="italian">Italian</option>
+                                <option value="kannada">Kannada</option>
+                                <option value="khmer">Khmer</option>
+                                <option value="lao">Lao</option>
+                                <option value="latin">Latin</option>
+                                <option value="latvian">Latvian</option>
+                                <option value="maltese">Maltese</option>
+                                <option value="mongolian">Mongolian</option>
+                                <option value="dutch">Dutch</option>
+                                <option value="norwegian">Norwegian</option>
+                                <option value="persian">Persian</option>
+                                <option value="polish">Polish</option>
+                                <option value="romanian">Romanian</option>
+                                <option value="russian">Russian</option>
+                                <option value="swedish">Swedish</option>
+                                <option value="tagalog">Tagalog</option>
+                                <option value="thai">Thai</option>
+                                <option value="turkish">Turkish</option>
+                                <option value="ukrainian">Ukrainian</option>
+                                <option value="vietnamese">Vietnamese</option>
+                                <option value="welsh">Welsh</option>
                             </select>
                             <div style={{ fontSize: '0.85em', color: '#aaa' }}>
                                 Used when installing or resetting default dictionaries.
@@ -397,21 +629,49 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                              <div style={{ paddingTop: '15px' }}>
                                  {/* Result Grouping Dropdown */}
                                  <div style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                    <label htmlFor="groupingMode" style={{fontSize: '0.9em', color: '#ccc'}}>Result Grouping</label>
-                                     <select
-                                         id="groupingMode"
-                                         value={localSettings.resultGroupingMode || 'grouped'}
-                                         onChange={(e) => handleChange('resultGroupingMode', e.target.value)}
-                                         style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: 'white' }}
-                                     >
-                                         <option value="grouped">Group by Term</option>
-                                         <option value="flat">No Grouping</option>
-                                     </select>
-                                     <div style={{ fontSize: '0.85em', color: '#aaa' }}>
-                                         Group results by term or list every entry.
-                                     </div>
-                                  </div>
+                                     <label htmlFor="groupingMode" style={{fontSize: '0.9em', color: '#ccc'}}>Result Grouping</label>
+                                      <select
+                                          id="groupingMode"
+                                          value={localSettings.resultGroupingMode || 'grouped'}
+                                          onChange={(e) => handleChange('resultGroupingMode', e.target.value)}
+                                          style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: 'white' }}
+                                      >
+                                          <option value="grouped">Group by Term</option>
+                                          <option value="flat">No Grouping</option>
+                                      </select>
+                                      <div style={{ fontSize: '0.85em', color: '#aaa' }}>
+                                          Group results by term or list every entry.
+                                      </div>
+                                   </div>
+                                    <label style={checkboxLabelStyle}>
+                                        <input
+                                            type="checkbox"
+                                            checked={localSettings.autoPlayWordAudio}
+                                            onChange={(e) => handleChange('autoPlayWordAudio', e.target.checked)}
+                                            style={checkboxInputStyle}
+                                        />
+                                        <div>
+                                            Auto-play Word Audio
+                                            <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                                                Plays word audio automatically when search results appear.
+                                            </div>
+                                        </div>
+                                    </label>
 
+                                <label style={checkboxLabelStyle}>
+                                    <input
+                                        type="checkbox"
+                                        checked={localSettings.showHarmonicMeanFreq}
+                                        onChange={e => handleChange('showHarmonicMeanFreq', e.target.checked)}
+                                        style={checkboxInputStyle}
+                                    />
+                                    <div>
+                                        Show Harmonic Mean Frequency
+                                        <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                                            Displays a single harmonic mean value instead of individual frequency dictionaries.
+                                        </div>
+                                    </div>
+                                </label>
 
                                 {isInstalling && (
                                     <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -526,6 +786,25 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                         </label>
                                     </div>
 
+                                    {!localSettings.enableYomitan && (
+                                        <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                            <label style={{ ...checkboxLabelStyle, marginBottom: '0' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={localSettings.skipAnkiUpdateConfirm ?? false}
+                                                    onChange={(e) => handleChange('skipAnkiUpdateConfirm', e.target.checked)}
+                                                    style={checkboxInputStyle}
+                                                />
+                                                <div>
+                                                    Skip Update Anki Card confirmation
+                                                    <div style={{ opacity: 0.5, fontSize: '0.9em' }}>
+                                                        Updates the last card immediately when you use the right-click action.
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    )}
+
                                     {localSettings.enableYomitan && (
                                         <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
                                             <label style={{ ...checkboxLabelStyle, marginBottom: '0' }}>
@@ -568,11 +847,15 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                                     value={localSettings.ankiModel || ''}
                                                     onChange={e => {
                                                         const newVal = e.target.value;
-                                                        setLocalSettings(prev => ({
-                                                            ...prev, 
-                                                            ankiModel: newVal,
-                                                            ankiFieldMap: {} 
-                                                        }));
+                                                        setLocalSettings(prev => {
+                                                            const next = {
+                                                                ...prev,
+                                                                ankiModel: newVal,
+                                                                ankiFieldMap: {},
+                                                            };
+                                                            persistSettings(next);
+                                                            return next;
+                                                        });
                                                     }}
                                                 >
                                                     <option value="">Select Card Type...</option>
@@ -611,8 +894,10 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                                                                     value={(localSettings.ankiFieldMap as any)?.[field] || 'None'}
                                                                                     onChange={e => handleFieldMapChange(field, e.target.value)}
                                                                                 >
-                                                                                    {MAPPING_OPTIONS.map(opt => (
-                                                                                        <option key={opt} value={opt}>{opt}</option>
+                                                                                    {mappingOptions.map((opt) => (
+                                                                                        <option key={opt.value} value={opt.value}>
+                                                                                            {opt.label}
+                                                                                        </option>
                                                                                     ))}
                                                                                 </select>
                                                                             </td>
@@ -648,15 +933,64 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                                                 Field where the screenshot image will be stored.
                                                             </div>
 
+                                                            <label>Sentence Audio Field</label>
+                                                            <select
+                                                                value={getFieldForContent('Sentence Audio')}
+                                                                onChange={(e) => handleContentToFieldChange('Sentence Audio', e.target.value)}
+                                                            >
+                                                                <option value="">(None)</option>
+                                                                {currentModelFields.map(f => <option key={f} value={f}>{f}</option>)}
+                                                            </select>
+                                                            <div style={{ gridColumn: '1 / -1', fontSize: '0.85em', color: '#aaa' }}>
+                                                                Field where the sentence audio will be stored.
+                                                            </div>
                                                         </div>
                                                     )}
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
+
+                                                        {/* FREQUENCY MODE DROPDOWN - ADD THIS */}
+                                                        {localSettings.enableYomitan &&
+                                                            Object.values(localSettings.ankiFieldMap || {}).includes('Frequency') && (
+                                                                <div style={{
+                                                                    marginTop: '20px',
+                                                                    paddingTop: '15px',
+                                                                    borderTop: '1px solid rgba(255,255,255,0.1)'
+                                                                }}>
+                                                                    <h4 style={{ marginTop: 0, marginBottom: '10px', color: '#ddd' }}>
+                                                                        Frequency Export Mode
+                                                                    </h4>
+                                                                    <div className="grid">
+                                                                        <label htmlFor="ankiFreqMode">Frequency Value</label>
+                                                                        <select
+                                                                            id="ankiFreqMode"
+                                                                            value={localSettings.ankiFreqMode || 'lowest'}
+                                                                            onChange={(e) => handleChange('ankiFreqMode', e.target.value)}
+                                                                            style={{
+                                                                                padding: '6px',
+                                                                                borderRadius: '4px',
+                                                                                border: '1px solid #444',
+                                                                                background: '#222',
+                                                                                color: 'white'
+                                                                            }}
+                                                                        >
+                                                                            <option value="lowest">Lowest Frequency</option>
+                                                                            <option value="harmonic">Harmonic Mean</option>
+                                                                            {availableFreqDicts.map(dict => (
+                                                                                <option key={dict} value={dict}>{dict}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <div style={{ gridColumn: '1 / -1', fontSize: '0.85em', color: '#aaa' }}>
+                                                                            Choose which frequency value to export to Anki.
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
                         </>
                     )}
 
@@ -753,6 +1087,40 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                             <div style={{ gridColumn: '1 / -1', fontSize: '0.85em', color: '#aaa' }}>
                                 Controls the height of the top tap zone for play/pause.
                             </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <div className="checkboxes">
+                                    <label style={checkboxLabelStyle}>
+                                        <input
+                                            type="checkbox"
+                                            checked={localSettings.animeSubtitleHoverLookup}
+                                            onChange={(e) => handleChange('animeSubtitleHoverLookup', e.target.checked)}
+                                            style={checkboxInputStyle}
+                                        />
+                                        <div>
+                                            Pause on subtitle hover
+                                            <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                                                Hovering subtitles pauses playback and opens the dictionary.
+                                            </div>
+                                        </div>
+                                    </label>
+                                    {localSettings.animeSubtitleHoverLookup && (
+                                        <label style={checkboxLabelStyle}>
+                                            <input
+                                                type="checkbox"
+                                                checked={localSettings.animeSubtitleHoverAutoResume}
+                                                onChange={(e) => handleChange('animeSubtitleHoverAutoResume', e.target.checked)}
+                                                style={checkboxInputStyle}
+                                            />
+                                            <div>
+                                                Auto resume on hover exit
+                                                <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                                                    Resume playback when you move the cursor off subtitles.
+                                                </div>
+                                            </div>
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
                             <label htmlFor="jimakuApiKey">Jimaku API Key</label>
                             <input
                                 id="jimakuApiKey"
@@ -770,6 +1138,26 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                     1. You can get a free key by signing up on the site: <a href="https://jimaku.cc/account" target="_blank" rel="noreferrer">https://jimaku.cc/account</a>
                                 </div>
                                 <div>2. Generate an API key under the "API" heading and copy it</div>
+                            </div>
+                        </div>
+                        <div style={{ marginTop: '16px' }}>
+                            <h4 style={{ marginTop: 0 }}>Hotkeys</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ fontSize: '0.85em', color: '#aaa', textAlign: 'right' }}>
+                                    Click a hotkey to remove it, or use + to add a new one.
+                                </div>
+                                {ANIME_HOTKEYS.map((hotkey) => (
+                                    <AnimeHotkeyRow
+                                        key={hotkey}
+                                        hotkey={hotkey}
+                                        keys={animeHotkeys[hotkey] ?? []}
+                                        existingKeys={existingAnimeHotkeys}
+                                        onChange={(keys) => updateAnimeHotkey(hotkey, keys)}
+                                    />
+                                ))}
+                                <Stack sx={{ alignItems: 'flex-end' }}>
+                                    <ResetButton onClick={() => handleChange('animeHotkeys', DEFAULT_ANIME_HOTKEYS)} variant="outlined" />
+                                </Stack>
                             </div>
                         </div>
                     </div>
@@ -797,11 +1185,20 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                 </div>
                             </label>
                             <label style={checkboxLabelStyle}>
-                                <input type="checkbox" checked={localSettings.addSpaceOnMerge} onChange={(e) => handleChange('addSpaceOnMerge', e.target.checked)} style={checkboxInputStyle} />
+                                <input type="checkbox" checked={localSettings.enableDoubleClickEdit} onChange={(e) => handleChange('enableDoubleClickEdit', e.target.checked)} style={checkboxInputStyle} />
                                 <div>
-                                    Add Space on Merge
+                                    Enable Double-Click Edit
                                     <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
-                                        Inserts a space when merging multiple text boxes.
+                                        Allows double-click to edit OCR text boxes.
+                                    </div>
+                                </div>
+                            </label>
+                            <label style={checkboxLabelStyle}>
+                                <input type="checkbox" checked={localSettings.enableDoubleTapZoom} onChange={(e) => handleChange('enableDoubleTapZoom', e.target.checked)} style={checkboxInputStyle} />
+                                <div>
+                                    Enable Double-Tap Zoom
+                                    <div style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                                        Allows double-tap to zoom in the manga reader.
                                     </div>
                                 </div>
                             </label>
@@ -815,13 +1212,6 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                             </select>
                             <div style={{ gridColumn: '1 / -1', fontSize: '0.85em', color: '#aaa' }}>
                                 Controls overlay colors and highlight styling.
-                            </div>
-                            <label htmlFor="textOrientation">Orientation</label>
-                            <select id="textOrientation" value={localSettings.textOrientation} onChange={(e) => handleChange('textOrientation', e.target.value)}>
-                                <option value="smart">Smart</option><option value="forceHorizontal">Horizontal</option><option value="forceVertical">Vertical</option>
-                            </select>
-                            <div style={{ gridColumn: '1 / -1', fontSize: '0.85em', color: '#aaa' }}>
-                                Preferred reading orientation for OCR text.
                             </div>
                         </div>
 
@@ -928,8 +1318,7 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                 </div>
                 <div className="ocr-modal-footer">
                     <button type="button" className="warning" onClick={resetToDefaults} style={{ marginRight: 'auto', background: '#e67e22', borderColor: '#d35400' }}>Defaults</button>
-                    <button type="button" onClick={onClose}>Cancel</button>
-                    <button type="button" className="primary" onClick={save}>Save & Reload</button>
+                    <button type="button" className="primary" onClick={onClose}>Close</button>
                 </div>
             </div>
         </div>

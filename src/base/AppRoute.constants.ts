@@ -245,6 +245,10 @@ export const AppRoutes = {
         match: '/more',
         path: '/more',
     },
+    dictionary: {
+        match: 'dictionary',
+        path: '/dictionary',
+    },
     ln: {
         match: 'ln',
         path: '/ln',

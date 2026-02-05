@@ -205,6 +205,74 @@ html.ocr-reader-mode body {
     }
 }
 
+@media (max-width: 640px) {
+    .ocr-modal-overlay {
+        padding: 10px;
+    }
+
+    .ocr-modal.settings-modal {
+        width: 100%;
+        max-width: 100%;
+        height: 100%;
+        max-height: 100%;
+        border-radius: 12px;
+        border-left: none;
+        border-right: none;
+        --settings-section-padding: 12px;
+        --settings-section-margin: 16px;
+    }
+
+    .ocr-modal.settings-modal .ocr-modal-header {
+        padding: 12px 16px;
+    }
+
+    .ocr-modal.settings-modal .ocr-modal-content {
+        padding: 12px 14px;
+    }
+
+    .ocr-modal.settings-modal .ocr-modal-footer {
+        padding: 10px 14px;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ocr-modal.settings-modal .ocr-modal-footer button {
+        flex: 0 0 auto;
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .ocr-modal.settings-modal .grid {
+        grid-template-columns: 1fr;
+        gap: 6px 0;
+        margin-bottom: 16px;
+    }
+
+    .ocr-modal.settings-modal .grid label {
+        font-size: 0.9em;
+        color: #cbd3dc;
+    }
+
+    .ocr-modal.settings-modal input,
+    .ocr-modal.settings-modal select,
+    .ocr-modal.settings-modal textarea {
+        padding: 10px 12px;
+        font-size: 0.95em;
+    }
+
+    .ocr-modal.settings-modal table {
+        font-size: 0.85em;
+    }
+
+    .ocr-modal.settings-modal .checkboxes label {
+        align-items: flex-start;
+    }
+
+    .ocr-modal.settings-modal .checkboxes label input {
+        margin-top: 2px;
+    }
+}
+
 .ocr-modal .grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px 15px; margin-bottom: 20px; align-items: center; }
 .ocr-modal input, .ocr-modal select, .ocr-modal textarea { background: #2a2a2e; color: white; border: 1px solid #555; padding: 8px; width: 100%; box-sizing: border-box; }
 
@@ -287,6 +355,7 @@ html.ocr-reader-mode body {
 
 .ocr-dialog-btn-confirm { background: #27ae60; color: white; }
 .ocr-dialog-btn-cancel { background: #444; color: white; }
+.ocr-dialog-btn-secondary { background: #2a2f36; color: white; }
 
 .ocr-dialog-spinner {
     border: 4px solid #444;

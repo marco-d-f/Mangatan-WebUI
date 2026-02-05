@@ -10,7 +10,11 @@ export const DictionaryManager: React.FC<{ onImportClick: () => void }> = ({ onI
     const refresh = async () => {
         setLoading(true);
         const list = await getDictionaries();
-        setDicts(list);
+        if (list) {
+            setDicts(list);
+        } else {
+            setTimeout(refresh, 1000);
+        }
         setLoading(false);
     };
 

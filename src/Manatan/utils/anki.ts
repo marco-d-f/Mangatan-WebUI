@@ -294,7 +294,9 @@ export async function updateLastCard(
     pictureField: string,
     sentenceField: string,
     quality: number,
-    preEncodedBase64?: string 
+    preEncodedBase64?: string,
+    audioField?: string,
+    audioBase64?: string
 ) {
     // Find the last card
     const id = await getLastCardId(ankiConnectUrl);
@@ -358,6 +360,29 @@ export async function updateLastCard(
                 filename: `manatan_${id}.webp`,
                 data: rawData,
                 fields: [pictureField],
+            };
+        }
+    }
+
+    // Handle audio field (if specified)
+    if (audioField && audioField.trim() && audioBase64) {
+        const rawAudio = audioBase64.includes('base64,')
+            ? audioBase64.split(';base64,')[1]
+            : audioBase64;
+
+        if (rawAudio) {
+            fields[audioField] = '';
+            const extension = audioBase64.startsWith('data:audio/mp4')
+                ? 'm4a'
+                : audioBase64.startsWith('data:audio/ogg')
+                    ? 'ogg'
+                    : audioBase64.startsWith('data:audio/wav')
+                        ? 'wav'
+                        : 'webm';
+            updatePayload.note.audio = {
+                filename: `manatan_audio_${id}.${extension}`,
+                data: rawAudio,
+                fields: [audioField],
             };
         }
     }

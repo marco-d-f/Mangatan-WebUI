@@ -47,15 +47,15 @@
     cursor: default;
 }
 
-/* Horizontal mode - left/right */
+/* Horizontal mode */
 .nav-btn.horizontal.prev {
-    left: 12px;
+    left: calc(12px + env(safe-area-inset-left));
     top: 50%;
     transform: translateY(-50%);
 }
 
 .nav-btn.horizontal.next {
-    right: 12px;
+    right: calc(12px + env(safe-area-inset-right));
     top: 50%;
     transform: translateY(-50%);
 }
@@ -68,15 +68,15 @@
     transform: translateY(-50%) scale(0.9);
 }
 
-/* Vertical mode - swapped for RTL feel */
+/* Vertical mode  */
 .nav-btn.vertical.prev {
-    right: 12px;
+    right: calc(12px + env(safe-area-inset-right));
     top: 50%;
     transform: translateY(-50%);
 }
 
 .nav-btn.vertical.next {
-    left: 12px;
+    left: calc(12px + env(safe-area-inset-left));
     top: 50%;
     transform: translateY(-50%);
 }
@@ -90,75 +90,137 @@
 }
 
 /* =====================================================
-   PROGRESS
+   PROGRESS BAR - BOTTOM (with Integrated Slider)
    ===================================================== */
 
-.reader-progress {
+.reader-progress-bar {
     position: fixed;
-    bottom: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    padding: 8px 18px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-family: system-ui, sans-serif;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 99;
     user-select: none;
-}
-
-.progress-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    padding: 0 max(20px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(20px, env(safe-area-inset-left));
+    border-top: 1px solid;
+    transition: height 0.2s ease;
 }
 
-.progress-text {
+.reader-progress-bar.with-slider {
+    height: 50px;
+}
+
+.reader-progress-bar.locked {
+    pointer-events: auto;
+}
+
+.progress-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    opacity: 0.12;
+    transition: width 0.3s ease;
+    pointer-events: none;
+}
+
+.progress-info {
+    position: relative;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    padding: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    z-index: 1;
+}
+
+.progress-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.progress-chars {
     font-weight: 500;
     font-variant-numeric: tabular-nums;
+    opacity: 0.85;
 }
 
-.progress-sep {
-    opacity: 0.3;
+.progress-separator {
+    opacity: 0.4;
 }
 
-.progress-chapter {
-    opacity: 0.6;
-    font-size: 11px;
+.progress-page-info {
+    font-weight: 500;
+    opacity: 0.85;
+    font-size: 12px;
 }
 
-.progress-bar {
-    width: 80px;
-    height: 2px;
-    background: rgba(128, 128, 128, 0.25);
-    border-radius: 1px;
-    overflow: hidden;
+/* Inline Slider - Perfectly Centered */
+.progress-slider-inline {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+    max-width: 300px;
+    margin: 0 auto;
 }
 
-.progress-fill {
-    height: 100%;
-    border-radius: 1px;
-    transition: width 0.2s;
+.progress-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.progress-percent {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
 }
 
 /* =====================================================
-   SLIDER
+   LOCK BUTTON
    ===================================================== */
 
-.reader-slider-wrap {
-    position: fixed;
-    bottom: 58px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 50%;
-    max-width: 250px;
-    padding: 10px 16px;
-    border-radius: 14px;
-    backdrop-filter: blur(10px);
+.progress-lock-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+    border-radius: 4px;
 }
+
+.progress-lock-btn:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.1);
+}
+
+.progress-lock-btn:active {
+    transform: scale(0.9);
+}
+
+.progress-lock-btn svg {
+    display: block;
+}
+
+/* =====================================================
+   SLIDER - INTEGRATED (Direction Aware)
+   ===================================================== */
 
 .reader-slider {
     width: 100%;
@@ -171,6 +233,15 @@
     outline: none;
 }
 
+/* RTL support for vertical mode */
+.reader-slider.vertical {
+    direction: rtl;
+}
+
+.reader-slider.horizontal {
+    direction: ltr;
+}
+
 .reader-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 16px;
@@ -178,6 +249,15 @@
     background: currentColor;
     border-radius: 50%;
     cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.reader-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.reader-slider::-webkit-slider-thumb:active {
+    transform: scale(1.1);
 }
 
 .reader-slider::-moz-range-thumb {
@@ -186,10 +266,20 @@
     background: currentColor;
     border-radius: 50%;
     border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.reader-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+}
+
+.reader-slider::-moz-range-thumb:active {
+    transform: scale(1.1);
 }
 
 /* =====================================================
-   MOBILE
+   MOBILE RESPONSIVE
    ===================================================== */
 
 @media (max-width: 768px) {
@@ -199,15 +289,77 @@
         font-size: 18px;
     }
 
-    .reader-progress {
-        bottom: 10px;
-        padding: 6px 14px;
+    /* HIDE buttons in horizontal mode on mobile */
+    .nav-btn.horizontal {
+        display: none;
+    }
+
+    /* Vertical mode stays LEFT/RIGHT on mobile */
+    .nav-btn.vertical.prev {
+        right: calc(12px + env(safe-area-inset-right));
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .nav-btn.vertical.next {
+        left: calc(12px + env(safe-area-inset-left));
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .reader-progress-bar {
+        height: 36px;
+        padding: 0 max(16px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px, env(safe-area-inset-left));
+    }
+
+    .reader-progress-bar.with-slider {
+        height: 46px;
+    }
+
+    .progress-info {
+        font-size: 11px;
+        gap: 10px;
+    }
+
+    .progress-chars {
+        font-size: 10px;
+    }
+
+    .progress-page-info {
         font-size: 11px;
     }
 
-    .reader-slider-wrap {
-        bottom: 48px;
-        width: 65%;
+    .progress-percent {
+        font-size: 13px;
+    }
+
+    .progress-slider-inline {
+        min-width: 80px;
+        max-width: 180px;
+    }
+
+    .progress-lock-btn {
+        padding: 4px;
+    }
+
+    .progress-lock-btn svg {
+        width: 12px;
+        height: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .progress-left {
+        gap: 6px;
+    }
+
+    .progress-separator {
+        display: none;
+    }
+
+    .progress-slider-inline {
+        min-width: 60px;
+        max-width: 120px;
     }
 }
 
@@ -219,6 +371,11 @@
     .nav-btn {
         opacity: 0.6;
     }
+
+    /* HIDE buttons in horizontal mode on touch devices */
+    .nav-btn.horizontal {
+        display: none;
+    }
 }
 
 /* =====================================================
@@ -226,11 +383,42 @@
    ===================================================== */
 
 @media (prefers-reduced-motion: reduce) {
-    .progress-fill {
+    .progress-bar-fill {
         transition: none;
     }
 
     .nav-btn {
         transition: none;
     }
+
+    .reader-progress-bar {
+        transition: none;
+    }
+
+    .reader-slider::-webkit-slider-thumb,
+    .reader-slider::-moz-range-thumb,
+    .progress-lock-btn {
+        transition: none;
+    }
+}
+
+/* =====================================================
+   TOC BUTTON
+   ===================================================== */
+
+.toc-btn {
+    position: fixed;
+    top: calc(60px + env(safe-area-inset-top));
+    right: calc(20px + env(safe-area-inset-right));
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    z-index: 150;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }

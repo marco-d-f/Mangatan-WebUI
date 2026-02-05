@@ -74,11 +74,11 @@ export const ChapterListInjector: React.FC = () => {
         const root = createRoot(wrapper);
         const urlPath = new URL(link.href).pathname;
 
-        root.render(
+            root.render(
             <ChapterProcessButton 
                 chapterPath={urlPath} 
                 creds={credsRef.current} 
-                addSpaceOnMerge={settings.addSpaceOnMerge}
+                language={settings.yomitanLanguage}
             />
         );
     };

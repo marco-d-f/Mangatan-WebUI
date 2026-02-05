@@ -1,13 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { checkChapterStatus, preprocessChapter, ChapterStatus, AuthCredentials } from '@/Manatan/utils/api';
+import { YomitanLanguage } from '@/Manatan/types';
 
 interface ChapterProcessButtonProps {
     chapterPath: string; 
     creds?: AuthCredentials;
-    addSpaceOnMerge?: boolean;
+    language?: YomitanLanguage;
 }
 
-export const ChapterProcessButton: React.FC<ChapterProcessButtonProps> = ({ chapterPath, creds, addSpaceOnMerge }) => {
+export const ChapterProcessButton: React.FC<ChapterProcessButtonProps> = ({
+    chapterPath,
+    creds,
+    language,
+}) => {
     const [status, setStatus] = useState<ChapterStatus>({ status: 'idle', cached: 0, total: 0 });
     const apiBaseUrl = `${window.location.origin}/api/v1${chapterPath}/page/`;
     const startingRef = useRef(false);
@@ -19,7 +24,7 @@ export const ChapterProcessButton: React.FC<ChapterProcessButtonProps> = ({ chap
         const check = async () => {
             if (status.status === 'processed') return;
 
-            const res = await checkChapterStatus(apiBaseUrl, creds);
+            const res = await checkChapterStatus(apiBaseUrl, creds, language);
             
             if (mounted) {
                 if (startingRef.current && res.status === 'idle') {
@@ -68,7 +73,7 @@ export const ChapterProcessButton: React.FC<ChapterProcessButtonProps> = ({ chap
             mounted = false; 
             if (intervalId) clearInterval(intervalId);
         };
-    }, [apiBaseUrl, status, creds]); 
+    }, [apiBaseUrl, status, creds, language]); 
 
     const handleClick = async (e: React.MouseEvent) => {
         e.preventDefault();
@@ -80,7 +85,7 @@ export const ChapterProcessButton: React.FC<ChapterProcessButtonProps> = ({ chap
         setStatus({ status: 'processing', progress: 0, total: 0 }); 
         
         try {
-            await preprocessChapter(apiBaseUrl, chapterPath, creds, addSpaceOnMerge);
+            await preprocessChapter(apiBaseUrl, chapterPath, creds, language);
             
             setTimeout(() => {
                 startingRef.current = false;
