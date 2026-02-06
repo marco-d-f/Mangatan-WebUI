@@ -20,7 +20,7 @@ const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 const DOUBLE_TAP_DELAY = 300;
 const DOUBLE_TAP_DISTANCE = 50;
-const SNAP_THRESHOLD = 0.1
+const SNAP_THRESHOLD = 0.1;
 
 const getDistance = (touch1: Touch, touch2: Touch): number =>
     Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
@@ -74,6 +74,35 @@ export const useMobileZoomPan = (
 
     const isMobile = useIsMobile();
 
+    // Normalized scrollLeft to always represent distance from the "Start" edge irrespective of browser
+    const getNormalizedScrollLeft = useCallback((): number => {
+        const container = scrollContainerRef.current;
+        if (!container) return 0;
+        
+        if (!isRTL || isVertical) return container.scrollLeft;
+
+        return Math.abs(container.scrollLeft);
+    }, [scrollContainerRef, isRTL, isVertical]);
+
+    const setNormalizedScrollLeft = useCallback((value: number) => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        if (!isRTL || isVertical) {
+            container.scrollLeft = value;
+            return;
+        }
+
+        const maxScroll = container.scrollWidth - container.clientWidth;
+        const clamped = Math.max(0, Math.min(maxScroll, value));
+
+        container.scrollLeft = clamped;
+
+        if (clamped > 0 && container.scrollLeft === 0) {
+            container.scrollLeft = -clamped;
+        }
+    }, [scrollContainerRef, isRTL, isVertical]);
+    
     // Apply scale directly to DOM for smooth updates during gesture
     const applyScaleToDOM = useCallback((scale: number) => {
         const content = contentRef.current;
@@ -133,8 +162,7 @@ export const useMobileZoomPan = (
         } else {
             // Horizontal mode: vertical axis is scaled, horizontal is natural scroll
             if (isRTL) {
-                const maxScrollLeft = container.scrollWidth - container.clientWidth;
-                const scrollFromRight = maxScrollLeft - container.scrollLeft;
+                const scrollFromRight = getNormalizedScrollLeft();
                 const containerXFromRight = rect.width - containerX;
                 contentX = (scrollFromRight + containerXFromRight) / scale;
             } else {
@@ -144,9 +172,8 @@ export const useMobileZoomPan = (
         }
 
         return { x: contentX, y: contentY };
-    }, [scrollContainerRef, isVertical, isRTL]);
+    }, [scrollContainerRef, isVertical, isRTL, getNormalizedScrollLeft]);
 
-    // Scroll to keep a content point at a viewport position
     const scrollToKeepContentAt = useCallback((
         contentX: number,
         contentY: number,
@@ -170,8 +197,7 @@ export const useMobileZoomPan = (
             if (isRTL) {
                 const containerXFromRight = rect.width - containerX;
                 const targetScrollFromRight = contentX * scale - containerXFromRight;
-                const maxScrollLeft = container.scrollWidth - container.clientWidth;
-                container.scrollLeft = Math.max(0, maxScrollLeft - targetScrollFromRight);
+                setNormalizedScrollLeft(targetScrollFromRight);
             } else {
                 const targetScrollLeft = contentX * scale - containerX;
                 container.scrollLeft = Math.max(0, targetScrollLeft);
@@ -179,7 +205,7 @@ export const useMobileZoomPan = (
             const targetScrollTop = contentY * scale - containerY;
             container.scrollTop = Math.max(0, targetScrollTop);
         }
-    }, [scrollContainerRef, isVertical, isRTL]);
+    }, [scrollContainerRef, isVertical, isRTL, setNormalizedScrollLeft]);
 
     const handleTouchStart = useCallback((e: TouchEvent) => {
         if (!enabled || !isMobile) return;
@@ -226,9 +252,7 @@ export const useMobileZoomPan = (
                     applyScaleToDOM(targetScale);
 
                     if (targetScale === 1) {
-                        container.scrollLeft = isRTL && !isVertical
-                            ? container.scrollWidth - container.clientWidth
-                            : 0;
+                        setNormalizedScrollLeft(0);
                         container.scrollTop = 0;
                     } else {
                         requestAnimationFrame(() => {
@@ -244,7 +268,7 @@ export const useMobileZoomPan = (
                 lastTap.current = { time: now, x: touch.clientX, y: touch.clientY };
             }
         }
-    }, [enabled, scrollContainerRef, viewportToContent, applyScaleToDOM, scrollToKeepContentAt, onScaleChange, isVertical, isRTL, doubleTapZoomEnabled]);
+    }, [enabled, scrollContainerRef, viewportToContent, applyScaleToDOM, scrollToKeepContentAt, onScaleChange, isVertical, isRTL, setNormalizedScrollLeft, isMobile]);
 
     const handleTouchMove = useCallback((e: TouchEvent) => {
         if (!enabled || !isMobile) return;
@@ -272,7 +296,7 @@ export const useMobileZoomPan = (
             currentCenter.y,
             newScale
         );
-    }, [enabled, minScale, maxScale, applyScaleToDOM, scrollToKeepContentAt]);
+    }, [enabled, minScale, maxScale, applyScaleToDOM, scrollToKeepContentAt, isMobile]);
 
     const handleTouchEnd = useCallback((e: TouchEvent) => {
         if (!pinchState.current.active) return;
@@ -309,7 +333,7 @@ export const useMobileZoomPan = (
 
         container.addEventListener('touchmove', preventDefault, { passive: false });
         return () => container.removeEventListener('touchmove', preventDefault);
-    }, [enabled, scrollContainerRef]);
+    }, [enabled, scrollContainerRef, isMobile]);
 
     // Main event listeners
     useEffect(() => {
@@ -331,7 +355,7 @@ export const useMobileZoomPan = (
             container.removeEventListener('touchend', handleTouchEnd);
             container.removeEventListener('touchcancel', handleTouchEnd);
         };
-    }, [enabled, scrollContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd]);
+    }, [enabled, scrollContainerRef, handleTouchStart, handleTouchMove, handleTouchEnd, isMobile]);
 
     const resetZoom = useCallback(() => {
         applyScaleToDOM(1);
@@ -340,12 +364,10 @@ export const useMobileZoomPan = (
 
         const container = scrollContainerRef.current;
         if (container) {
-            container.scrollLeft = isRTL && !isVertical
-                ? container.scrollWidth - container.clientWidth
-                : 0;
+            setNormalizedScrollLeft(0);
             container.scrollTop = 0;
         }
-    }, [applyScaleToDOM, scrollContainerRef, onScaleChange, isVertical, isRTL]);
+    }, [applyScaleToDOM, scrollContainerRef, onScaleChange, isVertical, isRTL, setNormalizedScrollLeft]);
 
     return {
         scale: zoomState.scale,

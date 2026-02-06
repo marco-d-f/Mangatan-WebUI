@@ -26,6 +26,10 @@ export const ReaderZoomWrapper = forwardRef<HTMLDivElement, ReaderZoomWrapperPro
         const isVertical = isContinuousVerticalReadingMode(readingMode);
         const isRTL = readingDirection === ReadingDirection.RTL;
 
+        const contentFlexDirection = isVertical
+            ? 'column'
+            : (isRTL ? 'row-reverse' : 'row');
+
         const { scale, isZoomed, isZooming } = useMobileZoomPan(
             scrollContainerRef,
             contentRef,
@@ -70,12 +74,7 @@ export const ReaderZoomWrapper = forwardRef<HTMLDivElement, ReaderZoomWrapperPro
                 height: scale > 1 ? `${100 / scale}%` : '100%',
             };
 
-        // Transform origin depends on reading direction for horizontal mode
-        const transformOrigin = isVertical
-            ? 'top left'
-            : isRTL
-                ? 'top right'
-                : 'top left';
+        const transformOrigin = (isRTL && !isVertical) ? 'top right' : 'top left';
 
         return (
             <Box
@@ -84,7 +83,7 @@ export const ReaderZoomWrapper = forwardRef<HTMLDivElement, ReaderZoomWrapperPro
                 sx={{
                     ...sizerSx,
                     display: 'flex',
-                    flexDirection: isVertical ? 'column' : 'row',
+                    flexDirection: contentFlexDirection,
                 }}
             >
                 <Box
@@ -97,7 +96,7 @@ export const ReaderZoomWrapper = forwardRef<HTMLDivElement, ReaderZoomWrapperPro
                         transition: isZooming ? 'none' : 'transform 0.15s ease-out',
                         willChange: isZooming ? 'transform' : 'auto',
                         display: 'flex',
-                        flexDirection: isVertical ? 'column' : 'row',
+                        flexDirection: contentFlexDirection,
                     }}
                 >
                     {children}
