@@ -32,6 +32,9 @@ type PageType = 'first' | 'last';
 
 const OPEN_CHAPTER_INTERSECTION_RATIO = 0;
 const BASE_MARGIN = 10;
+// Buffer to catch sub-pixel differences and overscroll bounces
+const SCROLL_END_THRESHOLD = 2.0;
+const SCROLL_START_TOLERANCE = 0.5;
 
 const getElementIntersectionInfoHorizontal = (
     readingDirection: ReadingDirection,
@@ -280,11 +283,19 @@ export const useReaderInfiniteScrollUpdateChapter = (
         }
 
         const onScroll = () => {
-            const isAtStartX = scrollElement.scrollLeft === 0;
-            const isAtEndX = scrollElement.scrollLeft === scrollElement.scrollWidth - scrollElement.clientWidth;
 
-            const isAtStartY = scrollElement.scrollTop === 0;
-            const isAtEndY = scrollElement.scrollTop === scrollElement.scrollHeight - scrollElement.clientHeight;
+            const absScrollLeft = Math.abs(scrollElement.scrollLeft);
+            const maxScrollLeft = scrollElement.scrollWidth - scrollElement.clientWidth;
+
+            const isAtStartX = absScrollLeft <= SCROLL_START_TOLERANCE;
+
+            const remainingScrollX = maxScrollLeft - absScrollLeft;
+            const isAtEndX = Math.abs(remainingScrollX) <= SCROLL_END_THRESHOLD;
+
+            const isAtStartY = scrollElement.scrollTop <= SCROLL_START_TOLERANCE;
+
+            const remainingScrollY = scrollElement.scrollHeight - scrollElement.clientHeight - scrollElement.scrollTop
+            const isAtEndY = Math.abs(remainingScrollY) <= SCROLL_END_THRESHOLD;
 
             const isAtStart = isContinuousVerticalReadingModeActive ? isAtStartY : isAtStartX;
             const isAtEnd = isContinuousVerticalReadingModeActive ? isAtEndY : isAtEndX;
